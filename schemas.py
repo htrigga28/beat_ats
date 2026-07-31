@@ -230,4 +230,3 @@ class ApiError(StrictModel):
 class HealthResponse(StrictModel):
     status: str
     gemini_configured: bool
-

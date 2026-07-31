@@ -1,0 +1,20 @@
+[server]
+maxUploadSize = 10
+maxMessageSize = 12
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#176B4D"
+backgroundColor = "#F5F7F3"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#17231C"
+borderColor = "#C9D0C8"
+baseRadius = "8px"
+buttonRadius = "8px"
+showWidgetBorder = true

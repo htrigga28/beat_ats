@@ -147,10 +147,14 @@ def extract_pdf_text(source: bytes | bytearray | BytesIO) -> ExtractionResult:
     needs_vision = printable_count < MIN_LOCAL_PDF_CHARACTERS
     warnings = (
         (
-            "Very little selectable text was found. Gemini vision processing is required "
-            "for this PDF."
-        ),
-    ) if needs_vision else ()
+            (
+                "Very little selectable text was found. Gemini vision processing is required "
+                "for this PDF."
+            ),
+        )
+        if needs_vision
+        else ()
+    )
     return ExtractionResult(
         text=text,
         file_type="pdf",

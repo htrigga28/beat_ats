@@ -6,13 +6,20 @@ import pytest
 from fastapi.testclient import TestClient
 from reportlab.pdfgen import canvas
 
-from analyzer import app, get_gemini_service, validate_rewrite_response
+from analyzer import (
+    GeminiProviderError,
+    GeminiService,
+    app,
+    get_gemini_service,
+    validate_rewrite_response,
+)
 from schemas import (
     BulletRewriteResponse,
     ExtractedResumeDocument,
     GapAnalysis,
     ResumeDocument,
 )
+from settings import Settings
 
 
 def _pdf_bytes(text: str | None = None) -> bytes:
@@ -229,3 +236,91 @@ def test_docx_endpoint_streams_word_document(fake_service: FakeGeminiService) ->
     assert response.headers["content-type"].startswith(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
+
+
+def test_rewrite_endpoint_returns_validated_alternatives(
+    fake_service: FakeGeminiService,
+) -> None:
+    resume = _extracted_resume().to_resume_document()
+    bullet_id = resume.work_experience[0].bullets[0].id
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/rewrites",
+            json={
+                "resume": resume.model_dump(mode="json"),
+                "job_description": "Senior frontend engineer " * 10,
+                "bullet_ids": [bullet_id],
+                "ai_processing_consent": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["bullet_id"] == bullet_id
+
+
+class _FakeModels:
+    def __init__(self, parsed: object, text: str = "") -> None:
+        self.parsed = parsed
+        self.text = text
+        self.calls: list[dict[str, object]] = []
+
+    async def generate_content(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        return type("FakeResponse", (), {"parsed": self.parsed, "text": self.text})()
+
+
+class _FakeClient:
+    def __init__(self, parsed: object, text: str = "") -> None:
+        self.models = _FakeModels(parsed, text)
+        self.aio = type("FakeAsyncClient", (), {"models": self.models})()
+
+
+def _gemini_service(parsed: object, text: str = "") -> tuple[GeminiService, _FakeClient]:
+    service = object.__new__(GeminiService)
+    service._settings = Settings(  # type: ignore[attr-defined]
+        gemini_api_key="test-key", gemini_max_attempts=1
+    )
+    client = _FakeClient(parsed, text)
+    service._client = client  # type: ignore[attr-defined]
+    return service, client
+
+
+@pytest.mark.asyncio
+async def test_gemini_service_structures_text_with_schema_config() -> None:
+    service, client = _gemini_service(_extracted_resume().model_dump())
+
+    result = await service.structure_resume_text("Jane Doe frontend engineer")
+
+    assert result.contact.full_name == "Jane Doe"
+    call = client.models.calls[0]
+    assert call["model"] == "gemini-3.6-flash"
+    assert "<resume>" in str(call["contents"])
+    assert call["config"].response_mime_type == "application/json"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_gemini_service_uses_inline_pdf_part() -> None:
+    service, client = _gemini_service(_extracted_resume())
+
+    await service.structure_resume_pdf(b"%PDF-test")
+
+    contents = client.models.calls[0]["contents"]
+    assert isinstance(contents, list)
+    assert contents[0].inline_data.mime_type == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_gemini_service_validates_json_text_fallback() -> None:
+    service, _ = _gemini_service(None, _extracted_resume().model_dump_json())
+
+    result = await service.structure_resume_text("Jane Doe")
+
+    assert result.contact.email == "jane@example.com"
+
+
+@pytest.mark.asyncio
+async def test_gemini_service_rejects_invalid_structured_output() -> None:
+    service, _ = _gemini_service(None, "not-json")
+
+    with pytest.raises(GeminiProviderError, match="invalid structured response"):
+        await service.structure_resume_text("Jane Doe")
