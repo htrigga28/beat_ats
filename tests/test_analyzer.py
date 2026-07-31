@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
+from google.genai import types
 from reportlab.pdfgen import canvas
 
 from analyzer import (
@@ -110,7 +112,7 @@ class FakeGeminiService:
 
 
 @pytest.fixture
-def fake_service() -> FakeGeminiService:
+def fake_service() -> Generator[FakeGeminiService, None, None]:
     service = FakeGeminiService()
     app.dependency_overrides[get_gemini_service] = lambda: service
     yield service
@@ -277,11 +279,9 @@ class _FakeClient:
 
 def _gemini_service(parsed: object, text: str = "") -> tuple[GeminiService, _FakeClient]:
     service = object.__new__(GeminiService)
-    service._settings = Settings(  # type: ignore[attr-defined]
-        gemini_api_key="test-key", gemini_max_attempts=1
-    )
+    service._settings = Settings(gemini_api_key="test-key", gemini_max_attempts=1)
     client = _FakeClient(parsed, text)
-    service._client = client  # type: ignore[attr-defined]
+    service._client = client
     return service, client
 
 
@@ -295,7 +295,9 @@ async def test_gemini_service_structures_text_with_schema_config() -> None:
     call = client.models.calls[0]
     assert call["model"] == "gemini-3.6-flash"
     assert "<resume>" in str(call["contents"])
-    assert call["config"].response_mime_type == "application/json"  # type: ignore[union-attr]
+    config = call["config"]
+    assert isinstance(config, types.GenerateContentConfig)
+    assert config.response_mime_type == "application/json"
 
 
 @pytest.mark.asyncio
