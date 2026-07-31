@@ -132,7 +132,11 @@ def extract_pdf_text(source: bytes | bytearray | BytesIO) -> ExtractionResult:
                 raise DocumentTooLargeError(
                     f"PDF resumes may contain at most {MAX_PDF_PAGES} pages."
                 )
-            page_text = [page.extract_text() or "" for page in pdf.pages]
+            # A tighter horizontal tolerance prevents tightly kerned resume text from
+            # collapsing adjacent words while retaining ordinary word grouping.
+            page_text = [
+                page.extract_text(x_tolerance=2, y_tolerance=3) or "" for page in pdf.pages
+            ]
     except DocumentTooLargeError:
         raise
     except PDFPasswordIncorrect as exc:

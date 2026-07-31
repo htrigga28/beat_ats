@@ -4,6 +4,7 @@ from io import BytesIO
 
 import pytest
 from docx import Document
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from parser import (
@@ -41,6 +42,18 @@ def _pdf_bytes(text: str | None = None, pages: int = 1) -> bytes:
     return stream.getvalue()
 
 
+def _tightly_kerned_pdf_bytes() -> bytes:
+    stream = BytesIO()
+    pdf = canvas.Canvas(stream)
+    first = "Improved"
+    pdf.drawString(72, 760, first)
+    next_x = 72 + stringWidth(first, "Helvetica", 12) + 2.5
+    pdf.drawString(next_x, 760, "frontend data handling across production interfaces")
+    pdf.showPage()
+    pdf.save()
+    return stream.getvalue()
+
+
 def test_clean_text_normalizes_unicode_bullets_and_whitespace() -> None:
     raw = "  ●  Built\u00a0  interfaces\r\n\r\n\r\n▪ Improved “accessibility”\u0000  "
 
@@ -67,6 +80,12 @@ def test_extract_pdf_marks_image_only_document_for_vision() -> None:
     assert result.text == ""
     assert result.needs_vision_fallback is True
     assert result.warnings
+
+
+def test_extract_pdf_preserves_spaces_between_tightly_kerned_words() -> None:
+    result = extract_pdf_text(_tightly_kerned_pdf_bytes())
+
+    assert "Improved frontend data handling" in result.text
 
 
 def test_extract_pdf_rejects_too_many_pages() -> None:
