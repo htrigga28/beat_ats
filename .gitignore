@@ -4,10 +4,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.qa/
 .coverage
 htmlcov/
 *.py[cod]
 *.docx
 *.pdf
 !.github/
-
