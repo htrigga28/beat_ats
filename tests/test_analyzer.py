@@ -298,6 +298,8 @@ async def test_gemini_service_structures_text_with_schema_config() -> None:
     config = call["config"]
     assert isinstance(config, types.GenerateContentConfig)
     assert config.response_mime_type == "application/json"
+    assert config.response_json_schema == ExtractedResumeDocument.model_json_schema()
+    assert config.response_schema is None
 
 
 @pytest.mark.asyncio

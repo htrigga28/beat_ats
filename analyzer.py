@@ -111,7 +111,12 @@ class GeminiService:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             response_mime_type="application/json",
-            response_schema=schema,
+            # Gemini's legacy ``response_schema`` accepts only its reduced
+            # OpenAPI-style Schema type and rejects Pydantic's
+            # ``additionalProperties`` constraints. ``response_json_schema``
+            # accepts the JSON Schema emitted by Pydantic; the returned value
+            # is still validated again below before it crosses our boundary.
+            response_json_schema=schema.model_json_schema(),
         )
         try:
             async for attempt in AsyncRetrying(
