@@ -22,7 +22,7 @@ COPY requirements.txt ./
 RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
 COPY --chown=app:app . ./
-COPY --from=frontend-build --chown=app:app /app/public ./public
+COPY --from=frontend-build --chown=app:app /app/frontend/dist ./public
 
 USER app
 
