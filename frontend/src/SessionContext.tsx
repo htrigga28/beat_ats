@@ -229,7 +229,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const restoreBullet = useCallback((bulletId: string) => {
     const snapshot = stateRef.current;
     if (!snapshot.resume || !snapshot.originalResume) return;
-    const originalText = findBulletText(snapshot.originalResume, bulletId);
+    const originalText =
+      snapshot.appliedChanges[bulletId]?.before ??
+      findBulletText(snapshot.originalResume, bulletId);
     if (!originalText) return;
     const resume = replaceBulletText(snapshot.resume, { [bulletId]: originalText });
     dispatch({ type: "bulletRestored", resume, bulletId });

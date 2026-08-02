@@ -65,6 +65,16 @@ export type Action =
   | { type: "clear" };
 
 function invalidateResumeDependents(state: WorkflowState, resume: ResumeDocument): WorkflowState {
+  const currentBulletText = new Map(
+    [...resume.work_experience, ...resume.projects].flatMap((entry) =>
+      entry.bullets.map((bullet) => [bullet.id, bullet.text] as const),
+    ),
+  );
+  const appliedChanges = Object.fromEntries(
+    Object.entries(state.appliedChanges).filter(
+      ([bulletId, change]) => currentBulletText.get(bulletId) === change.after,
+    ),
+  );
   return {
     ...state,
     resume,
@@ -74,6 +84,7 @@ function invalidateResumeDependents(state: WorkflowState, resume: ResumeDocument
     selectionLocked: false,
     rewritesByBulletId: {},
     openedSuggestionIds: [],
+    appliedChanges,
     truthConfirmations: unchecked,
     docxBlob: null,
     exportStatus: "idle",

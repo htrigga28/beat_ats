@@ -128,6 +128,34 @@ describe("session reducer", () => {
     expect(state.docxBlob).toBeNull();
   });
 
+  it("keeps only AI change records whose applied wording still exists after review edits", () => {
+    const appliedResume = structuredClone(resume);
+    appliedResume.work_experience[0].bullets[0].text = "Built a better thing";
+    let state: WorkflowState = {
+      ...ingestedState(),
+      resume: appliedResume,
+      appliedChanges: {
+        b1: {
+          bulletId: "b1",
+          source: "ai",
+          before: "Built a thing",
+          after: "Built a better thing",
+          appliedAt: 1,
+        },
+      },
+    };
+
+    const unrelatedEdit = structuredClone(appliedResume);
+    unrelatedEdit.contact.location = "Lagos";
+    state = reducer(state, { type: "resumeUpdated", resume: unrelatedEdit });
+    expect(state.appliedChanges.b1).toBeDefined();
+
+    const overwrittenBullet = structuredClone(unrelatedEdit);
+    overwrittenBullet.work_experience[0].bullets[0].text = "Manually revised wording";
+    state = reducer(state, { type: "resumeUpdated", resume: overwrittenBullet });
+    expect(state.appliedChanges).toEqual({});
+  });
+
   it("applies only an explicit suggestion while retaining generated proposals", () => {
     const source = reducer(ingestedState(), { type: "analysisLoaded", analysis });
     const edited = structuredClone(resume);

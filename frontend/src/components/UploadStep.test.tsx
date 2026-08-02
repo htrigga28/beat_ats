@@ -45,9 +45,11 @@ describe("UploadStep", () => {
         onUpload={onUpload}
       />,
     );
-    await user.upload(screen.getByLabelText("Resume file"), new File(["12345"], "resume.docx"));
+    fireEvent.change(screen.getByLabelText("Resume file"), {
+      target: { files: [new File(["12345"], "resume.docx")] },
+    });
     await user.click(screen.getByRole("button", { name: "Review extracted resume" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Only PDF and DOCX");
+    expect(screen.getByRole("alert")).toHaveTextContent("Only PDF resumes are supported");
   });
 
   it("reports the deployment size limit for an accepted file type", async () => {

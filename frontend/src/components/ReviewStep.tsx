@@ -75,6 +75,10 @@ export function ReviewStep({
       if (role.bullets.some((bullet) => !bullet.text.trim()))
         next.push(`Work experience ${index + 1}: empty bullets must be completed or removed.`);
     });
+    resume.skills.forEach((group, index) => {
+      if (group.items.length > 100)
+        next.push(`Skills group ${index + 1}: use no more than 100 comma-separated skills.`);
+    });
     resume.education.forEach((item, index) => {
       if (!item.institution.trim() || !item.credential.trim())
         next.push(`Education ${index + 1}: institution and credential are required.`);
@@ -168,6 +172,7 @@ export function ReviewStep({
           <ListEditor
             label="Links"
             values={resume.contact.links}
+            max={10}
             emptyMessage="No links parsed. Add a portfolio or profile if it was missed."
             onChange={(values) => mutate((draft) => (draft.contact.links = values))}
           />
@@ -212,6 +217,7 @@ export function ReviewStep({
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={resume.work_experience.length >= 30}
                 onClick={() =>
                   mutate((draft) =>
                     draft.work_experience.push({
@@ -314,6 +320,7 @@ export function ReviewStep({
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={resume.skills.length >= 30}
                 onClick={() => mutate((draft) => draft.skills.push({ label: "", items: [] }))}
               >
                 <Plus aria-hidden="true" /> Add group
@@ -359,6 +366,7 @@ export function ReviewStep({
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={resume.education.length >= 20}
                 onClick={() =>
                   mutate((draft) =>
                     draft.education.push({
@@ -413,6 +421,7 @@ export function ReviewStep({
                   <ListEditor
                     label="Education details"
                     values={item.details}
+                    max={20}
                     emptyMessage="No education details parsed. Add one if needed."
                     onChange={(values) =>
                       mutate((draft) => (draft.education[index].details = values))
@@ -433,6 +442,7 @@ export function ReviewStep({
             <ListEditor
               label="Certifications"
               values={resume.certifications}
+              max={30}
               emptyMessage="No certifications parsed. Click '+' to add if missing."
               onChange={(values) => mutate((draft) => (draft.certifications = values))}
             />
@@ -449,6 +459,7 @@ export function ReviewStep({
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={resume.projects.length >= 30}
                 onClick={() =>
                   mutate((draft) =>
                     draft.projects.push({
@@ -523,6 +534,7 @@ export function ReviewStep({
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={resume.additional_sections.length >= 20}
                 onClick={() =>
                   mutate((draft) => draft.additional_sections.push({ title: "", items: [] }))
                 }
@@ -552,6 +564,7 @@ export function ReviewStep({
                   <ListEditor
                     label={`${section.title || "Additional section"} items`}
                     values={section.items}
+                    max={50}
                     emptyMessage="No items parsed. Add one if this section is incomplete."
                     onChange={(values) =>
                       mutate((draft) => (draft.additional_sections[index].items = values))
@@ -756,11 +769,13 @@ function BulletEditor({
 function ListEditor({
   label,
   values,
+  max,
   emptyMessage,
   onChange,
 }: {
   label: string;
   values: string[];
+  max: number;
   emptyMessage: string;
   onChange: (values: string[]) => void;
 }) {
@@ -785,7 +800,13 @@ function ListEditor({
           />
         </div>
       ))}
-      <Button type="button" variant="ghost" size="sm" onClick={() => onChange([...values, ""])}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={values.length >= max}
+        onClick={() => onChange([...values, ""])}
+      >
         <Plus aria-hidden="true" /> Add {label.toLowerCase().replace(/s$/, "")}
       </Button>
     </div>

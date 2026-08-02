@@ -37,6 +37,8 @@ export function UploadStep({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const maxBytes = config?.max_upload_bytes ?? 10 * 1024 * 1024;
+  const acceptedExtensions = config?.accepted_extensions ?? [];
+  const acceptedTypes = acceptedExtensions.map((extension) => `.${extension}`).join(",");
   const maxMebibytes = maxBytes / (1024 * 1024);
   const maxLabel = `${Number.isInteger(maxMebibytes) ? maxMebibytes : maxMebibytes.toFixed(1)} MiB`;
   const descriptionLength = jobDescription.trim().length;
@@ -61,8 +63,10 @@ export function UploadStep({
     const next: string[] = [];
     const extension = file?.name.split(".").pop()?.toLowerCase() ?? "";
     if (!file) next.push("Choose a PDF or DOCX resume before continuing.");
-    else if (!config?.accepted_extensions.includes(extension))
-      next.push("Only PDF and DOCX resumes are supported.");
+    else if (!acceptedExtensions.includes(extension))
+      next.push(
+        `Only ${acceptedExtensions.map((item) => item.toUpperCase()).join(" and ")} resumes are supported.`,
+      );
     else if (file.size > maxBytes)
       next.push(`This file is larger than the deployment limit of ${maxLabel}.`);
     if (descriptionLength < 50)
@@ -125,7 +129,7 @@ export function UploadStep({
                 ref={fileInputRef}
                 className="sr-only"
                 type="file"
-                accept=".pdf,.docx"
+                accept={acceptedTypes}
                 onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
                 disabled={busy}
                 aria-label="Resume file"
@@ -162,7 +166,7 @@ export function UploadStep({
                 ref={fileInputRef}
                 className="sr-only"
                 type="file"
-                accept=".pdf,.docx"
+                accept={acceptedTypes}
                 onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
                 disabled={busy}
                 aria-label="Replace resume file"
@@ -223,6 +227,7 @@ export function UploadStep({
               id="job-description"
               value={jobDescription}
               onChange={(event) => setJobDescription(event.target.value)}
+              maxLength={50_000}
               placeholder="Paste the complete role description, including responsibilities, requirements, location, and eligibility…"
               rows={18}
               disabled={busy}
