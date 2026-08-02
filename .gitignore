@@ -13,3 +13,5 @@ htmlcov/
 *.docx
 *.pdf
 !.github/
+.vercel
+.env*
