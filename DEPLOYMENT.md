@@ -14,10 +14,13 @@ curl http://127.0.0.1:8000/healthz
 
 ## Vercel
 
-Vercel runs `cd frontend && npm ci && npm run build`, serves the resulting `public/**`
-assets, and loads the FastAPI app from `index.py`. Set `MAX_UPLOAD_BYTES=4194304` in
-Production and Preview environments: Vercel is intentionally limited to 4 MiB, and
-the runtime UI displays that limit before transmission.
+Vercel deploys the repository as two explicit services: a Vite service rooted at
+`frontend/` and a FastAPI service using `analyzer:app`. Requests under `/api`, plus
+the health and API documentation routes, go to FastAPI; every other route goes to
+Vite. This prevents FastAPI's root auto-detection from claiming `/` and returning a
+JSON 404 instead of the application. Set `MAX_UPLOAD_BYTES=4194304` in Production
+and Preview environments: Vercel is intentionally limited to 4 MiB, and the runtime
+UI displays that limit before transmission.
 
 The API and SPA share one origin. No `BACKEND_URL`, CORS middleware, temporary object
 storage, database, or browser persistence is used.

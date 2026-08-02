@@ -44,7 +44,10 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: |
+          npm run build
+          mkdir -p ../public
+          cp -R dist/. ../public/
 
       - name: Start API for OpenAPI drift check
         run: python -m uvicorn analyzer:app --host 127.0.0.1 --port 8000 &
@@ -87,7 +90,7 @@ jobs:
         run: ruff format --check .
 
       - name: Type check
-        run: mypy parser.py schemas.py settings.py analyzer.py generator.py index.py
+        run: mypy parser.py schemas.py settings.py analyzer.py generator.py
 
       - name: Test
         run: python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=85

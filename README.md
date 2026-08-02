@@ -43,7 +43,7 @@ deployment deliberately changes its upload contract.
 
 ## Vercel
 
-Vercel builds `frontend/` into `public/`, keeps `index.py` as the FastAPI entrypoint,
+Vercel deploys `frontend/` as a Vite service and `analyzer:app` as a FastAPI service,
 and serves the compiled SPA and API from one origin. It sets `MAX_UPLOAD_BYTES=4194304`
 (4 MiB), below Vercel's function payload ceiling. The runtime UI displays this lower
 limit before an upload is sent.
@@ -100,7 +100,7 @@ The compiled SPA is served at `/`; `/docs` and `/openapi.json` remain available.
 ```bash
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
-.venv/bin/mypy parser.py schemas.py settings.py analyzer.py generator.py index.py
+.venv/bin/mypy parser.py schemas.py settings.py analyzer.py generator.py
 .venv/bin/python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=85
 .venv/bin/python -m scripts.verify_gemini_model --resume /path/to/resume.pdf
 cd frontend

@@ -14,9 +14,11 @@ htmlcov
 .impeccable
 .streamlit
 frontend/node_modules
+frontend/dist
 frontend/coverage
 frontend/playwright-report
 frontend/test-results
-# Vercel builds the React app into public/ and must upload that directory to its CDN.
+# Vite owns its service output; exclude any stale local/Docker SPA build at the root.
+public
 *.pdf
 *.docx

@@ -1,19 +1,54 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd frontend && npm ci && npm run build",
-  "outputDirectory": "public",
+  "services": {
+    "frontend": {
+      "root": "frontend/",
+      "framework": "vite"
+    },
+    "backend": {
+      "root": ".",
+      "entrypoint": "analyzer:app"
+    }
+  },
   "env": {
     "MAX_UPLOAD_BYTES": "4194304"
   },
   "rewrites": [
     {
-      "source": "/((?!(?:api)(?:/|$)|healthz$|docs(?:/|$)|redoc(?:/|$)|openapi\\.json$|assets(?:/|$)).*)",
-      "destination": "/index.html"
+      "source": "/api/:path*",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/healthz",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/docs/:path*",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/redoc/:path*",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/openapi.json",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
     }
-  ],
-  "functions": {
-    "index.py": {
-      "excludeFiles": "{tests/**,__tests__/**,**/*.test.py,fixtures/**,**/test_*.py,.venv/**,.git/**,.qa/**,.work/**,.impeccable/**,.streamlit/**,.mypy_cache/**,.pytest_cache/**,.ruff_cache/**,.coverage,.env,.env.**,*.pdf,*.docx}"
-    }
-  }
+  ]
 }
