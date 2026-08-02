@@ -156,6 +156,7 @@ export interface WorkflowState {
   appliedChanges: Record<string, AppliedChange>;
   truthConfirmations: TruthConfirmations;
   docxBlob: Blob | null;
+  exportStatus: "idle" | "compiling" | "downloading";
   error: NormalizedError | null;
   activeRequest: string | null;
   uploadProgress: number;

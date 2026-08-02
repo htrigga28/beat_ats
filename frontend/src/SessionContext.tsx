@@ -17,19 +17,11 @@ import {
   rewriteBullets,
 } from "./api";
 import { initialState, reducer, type Action } from "./state";
-import type {
-  AppliedChange,
-  BulletRewriteResponse,
-  NormalizedError,
-  ResumeDocument,
-  Step,
-  WorkflowState,
-} from "./types";
+import type { AppliedChange, NormalizedError, ResumeDocument, Step, WorkflowState } from "./types";
 
 interface SessionContextValue {
   state: WorkflowState;
   dispatch: React.Dispatch<Action>;
-  downloadUrl: string | null;
   retry: (() => void) | null;
   uploadResume: (
     file: File,
@@ -39,6 +31,11 @@ interface SessionContextValue {
   ) => void;
   saveResume: (resume: ResumeDocument, shouldAnalyze: boolean) => void;
   requestRewrites: (ids: string[]) => void;
+  selectBullets: (ids: string[]) => void;
+  openSuggestions: (id: string) => void;
+  changeSelection: () => void;
+  applySuggestion: (bulletId: string, text: string) => void;
+  restoreBullet: (bulletId: string) => void;
   applyChoices: (choices: Record<string, string>) => void;
   reanalyze: () => void;
   createDocx: () => void;
@@ -161,7 +158,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const saveResume = useCallback(
     (resume: ResumeDocument, shouldAnalyze: boolean) => {
-      dispatch({ type: "resumeUpdated", resume });
+      const changed = JSON.stringify(resume) !== JSON.stringify(stateRef.current.resume);
+      if (changed) dispatch({ type: "resumeUpdated", resume });
       if (!shouldAnalyze) return;
       const retry = () => saveResume(resume, true);
       void run(
@@ -218,20 +216,57 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const selectBullets = useCallback((ids: string[]) => dispatch({ type: "selected", ids }), []);
+  const openSuggestions = useCallback(
+    (id: string) => dispatch({ type: "suggestionsOpened", id }),
+    [],
+  );
+  const changeSelection = useCallback(() => dispatch({ type: "selectionUnlocked" }), []);
+  const applySuggestion = useCallback(
+    (bulletId: string, text: string) => applyChoices({ [bulletId]: text }),
+    [applyChoices],
+  );
+  const restoreBullet = useCallback((bulletId: string) => {
+    const snapshot = stateRef.current;
+    if (!snapshot.resume || !snapshot.originalResume) return;
+    const originalText = findBulletText(snapshot.originalResume, bulletId);
+    if (!originalText) return;
+    const resume = replaceBulletText(snapshot.resume, { [bulletId]: originalText });
+    dispatch({ type: "bulletRestored", resume, bulletId });
+  }, []);
+
   const reanalyze = useCallback(() => {
     const snapshot = stateRef.current;
-    if (snapshot.resume) saveResume(snapshot.resume, true);
-  }, [saveResume]);
+    if (!snapshot.resume) return;
+    const retry = () => reanalyze();
+    void run(
+      "Refreshing advisory analysis",
+      (signal) =>
+        analyzeResume(snapshot.resume!, snapshot.jobDescription, true, signal).then((analysis) => {
+          dispatch({ type: "analysisLoaded", analysis, advance: false });
+          return analysis;
+        }),
+      retry,
+    );
+  }, [run]);
 
   const createDocx = useCallback(() => {
     const snapshot = stateRef.current;
     if (!snapshot.resume) return;
     const retry = () => createDocx();
+    dispatch({ type: "docxCompilationStarted" });
     void run(
       "Building Word document",
       (signal) =>
         generateDocx(snapshot.resume!, signal).then((blob) => {
           dispatch({ type: "docxLoaded", blob });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "tailored_resume.docx";
+          link.click();
+          URL.revokeObjectURL(url);
+          dispatch({ type: "docxDownloadFinished" });
           return blob;
         }),
       retry,
@@ -247,26 +282,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const cancelActiveRequest = useCallback(() => requestRef.current?.controller.abort(), []);
   const setStep = useCallback((step: Step) => dispatch({ type: "step", step }), []);
 
-  const downloadUrl = useMemo(
-    () => (state.docxBlob ? URL.createObjectURL(state.docxBlob) : null),
-    [state.docxBlob],
-  );
-  useEffect(
-    () => () => {
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-    },
-    [downloadUrl],
-  );
-
   const value = useMemo<SessionContextValue>(
     () => ({
       state,
       dispatch,
-      downloadUrl,
       retry: retryRef.current,
       uploadResume,
       saveResume,
       requestRewrites,
+      selectBullets,
+      openSuggestions,
+      changeSelection,
+      applySuggestion,
+      restoreBullet,
       applyChoices,
       reanalyze,
       createDocx,
@@ -276,10 +304,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
-      downloadUrl,
       uploadResume,
       saveResume,
       requestRewrites,
+      selectBullets,
+      openSuggestions,
+      changeSelection,
+      applySuggestion,
+      restoreBullet,
       applyChoices,
       reanalyze,
       createDocx,
@@ -296,9 +328,4 @@ export function useSession(): SessionContextValue {
   const context = useContext(SessionContext);
   if (!context) throw new Error("useSession must be used inside SessionProvider");
   return context;
-}
-
-export function rewritesAsResponse(state: WorkflowState): BulletRewriteResponse | null {
-  const items = Object.values(state.rewritesByBulletId);
-  return items.length ? { items } : null;
 }

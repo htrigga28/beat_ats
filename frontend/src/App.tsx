@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "./components/ui/alert-dialog";
 import { Button } from "./components/ui/button";
-import { rewritesAsResponse, SessionProvider, useSession } from "./SessionContext";
+import { SessionProvider, useSession } from "./SessionContext";
 import type { Step } from "./types";
 
 const labels = ["Upload", "Review", "Tailor", "Export"] as const;
@@ -26,11 +26,14 @@ function Application() {
     state,
     dispatch,
     retry,
-    downloadUrl,
     uploadResume,
     saveResume,
     requestRewrites,
-    applyChoices,
+    selectBullets,
+    openSuggestions,
+    changeSelection,
+    applySuggestion,
+    restoreBullet,
     reanalyze,
     createDocx,
     clearSession,
@@ -38,7 +41,6 @@ function Application() {
     setStep,
   } = useSession();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const rewrites = rewritesAsResponse(state);
   const hasPrivateData = state.resume !== null || state.jobDescription.length > 0;
 
   useEffect(() => {
@@ -159,16 +161,24 @@ function Application() {
             onBackConfirmed={clearSession}
           />
         )}
-        {state.step === 3 && state.resume && (
+        {state.step === 3 && state.resume && state.originalResume && state.analysis && (
           <TailorStep
             resume={state.resume}
-            rewrites={rewrites}
+            analysis={state.analysis}
+            jobDescription={state.jobDescription}
+            rewritesByBulletId={state.rewritesByBulletId}
             selectedIds={state.selectedBulletIds}
-            choices={{}}
+            activeBulletId={state.activeBulletId}
+            selectionLocked={state.selectionLocked}
+            openedSuggestionIds={state.openedSuggestionIds}
+            appliedChanges={state.appliedChanges}
             busy={Boolean(state.activeRequest)}
-            onRequest={requestRewrites}
-            onChoice={() => undefined}
-            onApply={applyChoices}
+            onSelectionChange={selectBullets}
+            onGenerate={requestRewrites}
+            onOpen={openSuggestions}
+            onChangeSelection={changeSelection}
+            onApply={applySuggestion}
+            onRestore={restoreBullet}
             onBack={() => setStep(2)}
             onContinue={() => setStep(4)}
           />
@@ -177,9 +187,12 @@ function Application() {
           <ExportStep
             resume={state.resume}
             original={state.originalResume}
+            appliedChanges={state.appliedChanges}
+            truthConfirmations={state.truthConfirmations}
             analysisStale={state.analysisStale}
             busy={Boolean(state.activeRequest)}
-            downloadUrl={downloadUrl}
+            exportStatus={state.exportStatus}
+            onTruthChange={(key, checked) => dispatch({ type: "truthConfirmation", key, checked })}
             onGenerate={createDocx}
             onReanalyze={reanalyze}
             onBack={() => setStep(3)}

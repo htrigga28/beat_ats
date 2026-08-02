@@ -245,9 +245,16 @@ describe("session reducer", () => {
     state = reducer(state, { type: "truthConfirmation", key: "factual", checked: true });
     expect(state.truthConfirmations.factual).toBe(true);
     const blob = new Blob(["docx"]);
+    state = reducer(state, { type: "docxCompilationStarted" });
+    expect(state.exportStatus).toBe("compiling");
     state = reducer(state, { type: "docxLoaded", blob });
     expect(state.docxBlob).toBe(blob);
+    expect(state.exportStatus).toBe("downloading");
+    state = reducer(state, { type: "docxDownloadFinished" });
+    expect(state.exportStatus).toBe("idle");
     state = reducer(state, { type: "step", step: 4 });
+    expect(state.step).toBe(4);
+    state = reducer(state, { type: "analysisLoaded", analysis, advance: false });
     expect(state.step).toBe(4);
   });
 });

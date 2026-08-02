@@ -31,6 +31,7 @@ export const initialState: WorkflowState = {
   appliedChanges: {},
   truthConfirmations: unchecked,
   docxBlob: null,
+  exportStatus: "idle",
   error: null,
   activeRequest: null,
   uploadProgress: 0,
@@ -47,7 +48,7 @@ export type Action =
   | { type: "errorCleared" }
   | { type: "ingested"; resume: ResumeDocument; jobDescription: string; warnings: string[] }
   | { type: "resumeUpdated"; resume: ResumeDocument }
-  | { type: "analysisLoaded"; analysis: GapAnalysis }
+  | { type: "analysisLoaded"; analysis: GapAnalysis; advance?: boolean }
   | { type: "warningDismissed"; warning: string }
   | { type: "selected"; ids: string[] }
   | { type: "activeBullet"; id: string | null }
@@ -58,6 +59,8 @@ export type Action =
   | { type: "bulletRestored"; resume: ResumeDocument; bulletId: string }
   | { type: "truthConfirmation"; key: keyof TruthConfirmations; checked: boolean }
   | { type: "docxLoaded"; blob: Blob }
+  | { type: "docxCompilationStarted" }
+  | { type: "docxDownloadFinished" }
   | { type: "step"; step: Step }
   | { type: "clear" };
 
@@ -73,6 +76,7 @@ function invalidateResumeDependents(state: WorkflowState, resume: ResumeDocument
     openedSuggestionIds: [],
     truthConfirmations: unchecked,
     docxBlob: null,
+    exportStatus: "idle",
     error: null,
   };
 }
@@ -90,7 +94,7 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
     case "ingestionProgress":
       return { ...state, ingestionPhase: action.event };
     case "error":
-      return { ...state, activeRequest: null, error: action.error };
+      return { ...state, activeRequest: null, exportStatus: "idle", error: action.error };
     case "errorCleared":
       return { ...state, error: null };
     case "ingested":
@@ -108,7 +112,7 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
     case "analysisLoaded":
       return {
         ...state,
-        step: 3,
+        step: action.advance === false ? state.step : 3,
         analysis: action.analysis,
         analysisStale: false,
         error: null,
@@ -164,6 +168,7 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
         appliedChanges: { ...state.appliedChanges, [action.change.bulletId]: action.change },
         truthConfirmations: unchecked,
         docxBlob: null,
+        exportStatus: "idle",
         error: null,
       };
     case "bulletRestored": {
@@ -176,6 +181,7 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
         appliedChanges,
         truthConfirmations: unchecked,
         docxBlob: null,
+        exportStatus: "idle",
       };
     }
     case "truthConfirmation":
@@ -184,7 +190,11 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
         truthConfirmations: { ...state.truthConfirmations, [action.key]: action.checked },
       };
     case "docxLoaded":
-      return { ...state, docxBlob: action.blob, error: null };
+      return { ...state, docxBlob: action.blob, exportStatus: "downloading", error: null };
+    case "docxCompilationStarted":
+      return { ...state, exportStatus: "compiling", error: null };
+    case "docxDownloadFinished":
+      return { ...state, exportStatus: "idle" };
     case "step":
       return { ...state, step: action.step, error: null };
     case "clear":
