@@ -29,6 +29,7 @@ def test_vercel_upload_includes_built_spa_output() -> None:
 
     assert not any(_hides_spa_output(pattern) for pattern in ignored_patterns)
     assert config["buildCommand"].endswith("npm run build")
+    assert config["outputDirectory"] == "public"
     assert any(rewrite["destination"] == "/index.html" for rewrite in config["rewrites"])
 
 
