@@ -60,6 +60,13 @@ Only Streamlit is bound to the host, at `127.0.0.1:8501`. FastAPI remains on the
 private Compose network. The services use read-only filesystems with temporary memory
 available at `/tmp`.
 
+## Vercel
+
+Vercel serves the FastAPI service through the Python runtime using `index.py`. The
+interactive API is available at `/docs`, while the existing Streamlit UI remains a
+long-running client and is best run with Docker Compose or another Python host. See
+[`DEPLOYMENT.md`](DEPLOYMENT.md) for environment variables and the branch workflow.
+
 ## Privacy model
 
 - Uploaded bytes are processed with `BytesIO` and released after the request. The
@@ -100,4 +107,3 @@ Install development dependencies and run:
 ```
 
 Tests mock Gemini and never send the included resume or fixtures to an external service.
-

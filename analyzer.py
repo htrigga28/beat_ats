@@ -336,6 +336,15 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok", gemini_configured=get_settings().gemini_api_key is not None)
 
 
+@app.get("/", include_in_schema=False)
+async def root() -> dict[str, str]:
+    return {
+        "name": "Beat ATS Resume Tailoring API",
+        "docs": "/docs",
+        "health": "/healthz",
+    }
+
+
 @app.post("/api/v1/resumes/ingest", response_model=ResumeIngestionResponse)
 async def ingest_resume(
     file: Annotated[UploadFile, File()],

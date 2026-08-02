@@ -140,6 +140,18 @@ def test_ingest_text_pdf_without_persisting_upload(fake_service: FakeGeminiServi
     assert fake_service.pdf_calls == 0
 
 
+def test_api_root_describes_available_routes() -> None:
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "Beat ATS Resume Tailoring API",
+        "docs": "/docs",
+        "health": "/healthz",
+    }
+
+
 def test_ingest_scanned_pdf_requires_explicit_vision_permission(
     fake_service: FakeGeminiService,
 ) -> None:
