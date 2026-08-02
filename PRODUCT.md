@@ -27,10 +27,10 @@ hidden text, or automatic factual invention.
 
 ## Operating Context
 
-The application runs as a Streamlit frontend backed by a private FastAPI service. It
-uses Gemini for structured extraction, gap analysis, and selected bullet alternatives.
-Resume data is held only in request memory and Streamlit session state; users can clear
-the session at any point.
+The application runs as a React single-page frontend backed by a private FastAPI
+service. It uses Gemini for structured extraction, gap analysis, and selected bullet
+alternatives. Resume data is held only in request memory and browser state; users can
+clear the session at any point.
 
 ## Capabilities and Constraints
 
@@ -64,4 +64,3 @@ the session at any point.
 All controls require visible labels, keyboard access, readable focus treatment, clear
 error recovery, and sufficient contrast. The workflow must remain usable on narrow
 screens and must not communicate status through color alone.
-

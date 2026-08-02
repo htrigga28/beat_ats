@@ -1,8 +1,4 @@
-"""Vercel entrypoint for the FastAPI service.
-
-The Streamlit UI remains the long-running local/Docker client. Vercel serves the
-stateless API and its OpenAPI documentation through the Python runtime.
-"""
+"""Vercel entrypoint for the single-origin FastAPI API and compiled SPA."""
 
 from analyzer import app
 
