@@ -1,310 +1,818 @@
-import { useEffect, type ReactNode } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
-import { AnalysisView } from "./AnalysisView";
-import type { GapAnalysis, ResumeDocument } from "../types";
-
-function toStringList(value: unknown, separator: string): string[] {
-  const values = Array.isArray(value) ? value : String(value ?? "").split(separator);
-  return values.map((item) => String(item).trim()).filter(Boolean);
-}
+import { AlertTriangle, ChevronLeft, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import type { ResumeDocument } from "../types";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./ui/alert-dialog";
+import { Button } from "./ui/button";
 
 interface Props {
   resume: ResumeDocument;
+  original?: ResumeDocument;
   warnings: string[];
-  analysis: GapAnalysis | null;
-  analysisStale: boolean;
   busy: boolean;
   onSave: (resume: ResumeDocument, analyze: boolean) => void;
-  onContinue: () => void;
+  onDismissWarning?: (warning: string) => void;
+  onBackConfirmed?: () => void;
+}
+
+type ResumeSection = Exclude<keyof ResumeDocument, "contact">;
+
+function newId(): string {
+  return crypto.randomUUID();
+}
+
+function compact(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean);
 }
 
 export function ReviewStep({
-  resume,
+  resume: sourceResume,
+  original = sourceResume,
   warnings,
-  analysis,
-  analysisStale,
   busy,
   onSave,
-  onContinue,
+  onDismissWarning,
+  onBackConfirmed,
 }: Props) {
-  const {
-    control,
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<ResumeDocument>({ defaultValues: resume });
-  const roles = useFieldArray({ control, name: "work_experience", keyName: "formKey" });
-  const education = useFieldArray({ control, name: "education", keyName: "formKey" });
-  const projects = useFieldArray({ control, name: "projects", keyName: "formKey" });
-  useEffect(() => reset(resume), [reset, resume]);
-  const submit = (analyze: boolean) =>
-    handleSubmit((data) => onSave({ ...resume, ...data }, analyze))();
+  const [resume, setResume] = useState(() => structuredClone(sourceResume));
+  const [errors, setErrors] = useState<string[]>([]);
+
+  useEffect(() => setResume(structuredClone(sourceResume)), [sourceResume]);
+
+  const mutate = (change: (draft: ResumeDocument) => void) => {
+    setResume((current) => {
+      const draft = structuredClone(current);
+      change(draft);
+      return draft;
+    });
+  };
+
+  const restore = (section: ResumeSection) => {
+    mutate((draft) => {
+      Object.assign(draft, { [section]: structuredClone(original[section]) });
+    });
+  };
+
+  const changed = (section: keyof ResumeDocument) =>
+    JSON.stringify(resume[section]) !== JSON.stringify(original[section]);
+
+  const validate = (): string[] => {
+    const next: string[] = [];
+    if (!resume.contact.full_name.trim()) next.push("Contact: full name is required.");
+    resume.work_experience.forEach((role, index) => {
+      if (!role.title.trim() || !role.employer.trim())
+        next.push(`Work experience ${index + 1}: title and employer are required.`);
+      if (role.bullets.some((bullet) => !bullet.text.trim()))
+        next.push(`Work experience ${index + 1}: empty bullets must be completed or removed.`);
+    });
+    resume.education.forEach((item, index) => {
+      if (!item.institution.trim() || !item.credential.trim())
+        next.push(`Education ${index + 1}: institution and credential are required.`);
+    });
+    resume.projects.forEach((project, index) => {
+      if (!project.name.trim()) next.push(`Project ${index + 1}: project name is required.`);
+      if (project.bullets.some((bullet) => !bullet.text.trim()))
+        next.push(`Project ${index + 1}: empty bullets must be completed or removed.`);
+    });
+    resume.additional_sections.forEach((section, index) => {
+      if (!section.title.trim()) next.push(`Additional section ${index + 1}: title is required.`);
+    });
+    return next;
+  };
+
+  const requestComparison = () => {
+    const next = validate();
+    setErrors(next);
+    if (next.length === 0) onSave(resume, true);
+  };
 
   return (
-    <section className="reading-column wide-column" aria-labelledby="review-title">
-      <p className="eyebrow">FACT CHECK</p>
-      <h2 id="review-title">Review before analysis</h2>
-      <p className="lead">
-        Every extracted field is editable. Nothing is changed by AI at this stage.
-      </p>
-      {warnings.map((warning) => (
-        <div className="alert alert-warning" role="status" key={warning}>
-          {warning}
+    <section className="stage-enter review-workspace" aria-labelledby="review-title">
+      {warnings.length > 0 && (
+        <div className="warning-stack" role="region" aria-label="Parser warnings">
+          {warnings.map((warning) => (
+            <div className="parser-warning" role="status" key={warning}>
+              <AlertTriangle aria-hidden="true" />
+              <div>
+                <strong>Check the extracted layout</strong>
+                <span>{warning}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Dismiss warning: ${warning}`}
+                onClick={() => onDismissWarning?.(warning)}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
         </div>
-      ))}
-      <form className="form-sheet resume-editor" onSubmit={(event) => event.preventDefault()}>
-        <fieldset>
-          <legend>Contact</legend>
-          <div className="field-grid">
-            <Field label="Full name" error={errors.contact?.full_name?.message}>
-              <input {...register("contact.full_name", { required: "Full name is required." })} />
-            </Field>
-            <Field label="Email">
-              <input {...register("contact.email")} />
-            </Field>
-            <Field label="Phone">
-              <input {...register("contact.phone")} />
-            </Field>
-            <Field label="Location">
-              <input {...register("contact.location")} />
-            </Field>
-          </div>
-          <Field label="Links — one per line">
-            <textarea
-              {...register("contact.links", {
-                setValueAs: (value: unknown) => toStringList(value, "\n"),
-              })}
-              defaultValue={resume.contact.links?.join("\n")}
-              rows={3}
+      )}
+
+      <div className="stage-intro review-intro">
+        <span className="stage-kicker">Stage 2 · Fact check</span>
+        <h2 id="review-title">Verify what was extracted</h2>
+        <p>
+          This is the working copy Beat ATS will compare. Inspect every field and correct parsing
+          mistakes before requesting advisory analysis.
+        </p>
+      </div>
+
+      {errors.length > 0 && (
+        <div className="field-errors" role="alert">
+          <strong>Complete these fields before comparison</strong>
+          <ul>
+            {errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <article className="resume-canvas">
+        <header className="resume-contact-block">
+          <TextField
+            label="Full name"
+            value={resume.contact.full_name}
+            changed={resume.contact.full_name !== original.contact.full_name}
+            onChange={(value) => mutate((draft) => (draft.contact.full_name = value))}
+          />
+          <div className="resume-contact-grid">
+            <TextField
+              label="Email"
+              value={resume.contact.email ?? ""}
+              onChange={(value) => mutate((draft) => (draft.contact.email = value || null))}
             />
-          </Field>
-          <Field label="Professional summary">
-            <textarea {...register("professional_summary")} rows={5} />
-          </Field>
-        </fieldset>
-        <fieldset>
-          <legend>Work experience</legend>
-          {roles.fields.map((role, roleIndex) => (
-            <div className="editor-section" key={role.formKey}>
-              <div className="section-heading">
-                <h3>{role.title || `Role ${roleIndex + 1}`}</h3>
-                <button
-                  className="text-button danger-text"
-                  type="button"
-                  onClick={() => roles.remove(roleIndex)}
-                >
-                  Remove role
-                </button>
-              </div>
-              <input type="hidden" {...register(`work_experience.${roleIndex}.id`)} />
-              <div className="field-grid">
-                <Field label="Job title">
-                  <input
-                    {...register(`work_experience.${roleIndex}.title`, {
-                      required: "Job title is required.",
-                    })}
-                  />
-                </Field>
-                <Field label="Employer">
-                  <input
-                    {...register(`work_experience.${roleIndex}.employer`, {
-                      required: "Employer is required.",
-                    })}
-                  />
-                </Field>
-                <Field label="Location">
-                  <input {...register(`work_experience.${roleIndex}.location`)} />
-                </Field>
-                <Field label="Start date">
-                  <input {...register(`work_experience.${roleIndex}.start_date`)} />
-                </Field>
-                <Field label="End date">
-                  <input {...register(`work_experience.${roleIndex}.end_date`)} />
-                </Field>
-              </div>
-              <div className="bullet-editor">
-                <span className="field-label">Bullets</span>
-                {(role.bullets ?? []).map((bullet, bulletIndex) => (
-                  <div className="bullet-row" key={bullet.id}>
-                    <input
-                      type="hidden"
-                      {...register(`work_experience.${roleIndex}.bullets.${bulletIndex}.id`)}
+            <TextField
+              label="Phone"
+              value={resume.contact.phone ?? ""}
+              onChange={(value) => mutate((draft) => (draft.contact.phone = value || null))}
+            />
+            <TextField
+              label="Location"
+              value={resume.contact.location ?? ""}
+              onChange={(value) => mutate((draft) => (draft.contact.location = value || null))}
+            />
+          </div>
+          <ListEditor
+            label="Links"
+            values={resume.contact.links}
+            emptyMessage="No links parsed. Add a portfolio or profile if it was missed."
+            onChange={(values) => mutate((draft) => (draft.contact.links = values))}
+          />
+        </header>
+
+        <Accordion
+          type="multiple"
+          defaultValue={[
+            "summary",
+            "experience",
+            "skills",
+            "education",
+            "certifications",
+            "projects",
+            "additional",
+          ]}
+          className="resume-sections"
+        >
+          <ResumeSectionBlock
+            value="summary"
+            title="Professional summary"
+            changed={changed("professional_summary")}
+            onRestore={() => restore("professional_summary")}
+          >
+            <InlineEditor
+              label="Professional summary"
+              value={resume.professional_summary ?? ""}
+              multiline
+              placeholder="No professional summary parsed. Click to add one if it was missed."
+              onChange={(value) => mutate((draft) => (draft.professional_summary = value || null))}
+            />
+          </ResumeSectionBlock>
+
+          <ResumeSectionBlock
+            value="experience"
+            title="Work experience"
+            count={resume.work_experience.length}
+            changed={changed("work_experience")}
+            onRestore={() => restore("work_experience")}
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  mutate((draft) =>
+                    draft.work_experience.push({
+                      id: newId(),
+                      employer: "",
+                      title: "",
+                      location: null,
+                      start_date: null,
+                      end_date: null,
+                      bullets: [],
+                    }),
+                  )
+                }
+              >
+                <Plus aria-hidden="true" /> Add role
+              </Button>
+            }
+          >
+            {resume.work_experience.length === 0 ? (
+              <EmptyParsedState label="work experience" />
+            ) : (
+              resume.work_experience.map((role, roleIndex) => (
+                <div className="document-entry" key={role.id}>
+                  <div className="entry-action-row">
+                    <span>Role {roleIndex + 1}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="danger-text"
+                      onClick={() => mutate((draft) => draft.work_experience.splice(roleIndex, 1))}
+                    >
+                      <Trash2 aria-hidden="true" /> Remove
+                    </Button>
+                  </div>
+                  <div className="entry-grid">
+                    <TextField
+                      label="Job title"
+                      value={role.title}
+                      onChange={(value) =>
+                        mutate((draft) => (draft.work_experience[roleIndex].title = value))
+                      }
                     />
-                    <textarea
-                      aria-label={`Bullet ${bulletIndex + 1} for ${role.title}`}
-                      {...register(`work_experience.${roleIndex}.bullets.${bulletIndex}.text`, {
-                        required: "Bullet text is required.",
-                      })}
-                      rows={2}
+                    <TextField
+                      label="Employer"
+                      value={role.employer}
+                      onChange={(value) =>
+                        mutate((draft) => (draft.work_experience[roleIndex].employer = value))
+                      }
+                    />
+                    <TextField
+                      label="Location"
+                      value={role.location ?? ""}
+                      onChange={(value) =>
+                        mutate(
+                          (draft) => (draft.work_experience[roleIndex].location = value || null),
+                        )
+                      }
+                    />
+                    <TextField
+                      label="Start date"
+                      value={role.start_date ?? ""}
+                      onChange={(value) =>
+                        mutate(
+                          (draft) => (draft.work_experience[roleIndex].start_date = value || null),
+                        )
+                      }
+                    />
+                    <TextField
+                      label="End date"
+                      value={role.end_date ?? ""}
+                      onChange={(value) =>
+                        mutate(
+                          (draft) => (draft.work_experience[roleIndex].end_date = value || null),
+                        )
+                      }
                     />
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </fieldset>
-        <fieldset>
-          <legend>Skills</legend>
-          {(resume.skills ?? []).map((group, index) => (
-            <div className="field-grid" key={`skill-${index}`}>
-              <Field label="Skill group">
-                <input {...register(`skills.${index}.label`)} defaultValue={group.label ?? ""} />
-              </Field>
-              <Field label="Skills — comma separated">
-                <input
-                  {...register(`skills.${index}.items`, {
-                    setValueAs: (value: unknown) => toStringList(value, ","),
-                  })}
-                  defaultValue={group.items?.join(", ")}
-                />
-              </Field>
-            </div>
-          ))}
-        </fieldset>
-        <fieldset>
-          <legend>Education</legend>
-          {education.fields.map((item, index) => (
-            <div className="editor-section compact-section" key={item.formKey}>
-              <div className="section-heading">
-                <h3>{item.credential || `Education ${index + 1}`}</h3>
-                <button
-                  className="text-button danger-text"
-                  type="button"
-                  onClick={() => education.remove(index)}
-                >
-                  Remove
-                </button>
-              </div>
-              <div className="field-grid">
-                <Field label="Credential">
-                  <input {...register(`education.${index}.credential`)} />
-                </Field>
-                <Field label="Institution">
-                  <input {...register(`education.${index}.institution`)} />
-                </Field>
-                <Field label="Field of study">
-                  <input {...register(`education.${index}.field_of_study`)} />
-                </Field>
-                <Field label="Location">
-                  <input {...register(`education.${index}.location`)} />
-                </Field>
-                <Field label="Dates">
-                  <input {...register(`education.${index}.dates`)} />
-                </Field>
-              </div>
-              <Field label="Details — one per line">
-                <textarea
-                  {...register(`education.${index}.details`, {
-                    setValueAs: (value: unknown) => toStringList(value, "\n"),
-                  })}
-                  defaultValue={item.details?.join("\n")}
-                  rows={3}
-                />
-              </Field>
-            </div>
-          ))}
-        </fieldset>
-        <Field label="Certifications — one per line">
-          <textarea
-            {...register("certifications", {
-              setValueAs: (value: unknown) => toStringList(value, "\n"),
-            })}
-            defaultValue={resume.certifications?.join("\n")}
-            rows={3}
-          />
-        </Field>
-        <fieldset>
-          <legend>Projects</legend>
-          {projects.fields.map((item, index) => (
-            <div className="editor-section compact-section" key={item.formKey}>
-              <div className="section-heading">
-                <h3>{item.name || `Project ${index + 1}`}</h3>
-                <button
-                  className="text-button danger-text"
-                  type="button"
-                  onClick={() => projects.remove(index)}
-                >
-                  Remove
-                </button>
-              </div>
-              <input type="hidden" {...register(`projects.${index}.id`)} />
-              <div className="field-grid">
-                <Field label="Project name">
-                  <input {...register(`projects.${index}.name`)} />
-                </Field>
-                <Field label="Project role">
-                  <input {...register(`projects.${index}.role`)} />
-                </Field>
-                <Field label="Dates">
-                  <input {...register(`projects.${index}.dates`)} />
-                </Field>
-                <Field label="Project link">
-                  <input {...register(`projects.${index}.link`)} />
-                </Field>
-              </div>
-              {(item.bullets ?? []).map((bullet, bulletIndex) => (
-                <div className="bullet-row" key={bullet.id}>
-                  <input
-                    type="hidden"
-                    {...register(`projects.${index}.bullets.${bulletIndex}.id`)}
-                  />
-                  <textarea
-                    aria-label={`Project bullet ${bulletIndex + 1} for ${item.name}`}
-                    {...register(`projects.${index}.bullets.${bulletIndex}.text`)}
-                    defaultValue={bullet.text}
-                    rows={2}
+                  <BulletEditor
+                    label={`${role.title || `Role ${roleIndex + 1}`} bullets`}
+                    bullets={role.bullets}
+                    max={30}
+                    onChange={(bullets) =>
+                      mutate((draft) => (draft.work_experience[roleIndex].bullets = bullets))
+                    }
                   />
                 </div>
-              ))}
-            </div>
-          ))}
-        </fieldset>
-        <div className="form-actions">
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={() => submit(false)}
-            disabled={busy}
+              ))
+            )}
+          </ResumeSectionBlock>
+
+          <ResumeSectionBlock
+            value="skills"
+            title="Skills"
+            count={resume.skills.length}
+            changed={changed("skills")}
+            onRestore={() => restore("skills")}
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => mutate((draft) => draft.skills.push({ label: "", items: [] }))}
+              >
+                <Plus aria-hidden="true" /> Add group
+              </Button>
+            }
           >
-            Save edits
-          </button>
-          <button
-            className="button button-primary"
-            type="button"
-            onClick={() => submit(true)}
-            disabled={busy}
+            {resume.skills.length === 0 ? (
+              <EmptyParsedState label="skills" />
+            ) : (
+              resume.skills.map((group, index) => (
+                <div className="list-group-row" key={`skills-${index}`}>
+                  <TextField
+                    label="Group label"
+                    value={group.label ?? ""}
+                    onChange={(value) =>
+                      mutate((draft) => (draft.skills[index].label = value || null))
+                    }
+                  />
+                  <TextField
+                    label="Skills (comma separated)"
+                    value={group.items.join(", ")}
+                    onChange={(value) =>
+                      mutate((draft) => (draft.skills[index].items = compact(value.split(","))))
+                    }
+                  />
+                  <IconRemove
+                    label="Remove skill group"
+                    onClick={() => mutate((draft) => draft.skills.splice(index, 1))}
+                  />
+                </div>
+              ))
+            )}
+          </ResumeSectionBlock>
+
+          <ResumeSectionBlock
+            value="education"
+            title="Education"
+            count={resume.education.length}
+            changed={changed("education")}
+            onRestore={() => restore("education")}
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  mutate((draft) =>
+                    draft.education.push({
+                      institution: "",
+                      credential: "",
+                      field_of_study: null,
+                      location: null,
+                      dates: null,
+                      details: [],
+                    }),
+                  )
+                }
+              >
+                <Plus aria-hidden="true" /> Add education
+              </Button>
+            }
           >
-            {busy ? "Analyzing…" : "Save & analyze"}
-          </button>
+            {resume.education.length === 0 ? (
+              <EmptyParsedState label="education" />
+            ) : (
+              resume.education.map((item, index) => (
+                <div className="document-entry" key={`education-${index}`}>
+                  <div className="entry-action-row">
+                    <span>Education {index + 1}</span>
+                    <IconRemove
+                      label="Remove education"
+                      onClick={() => mutate((draft) => draft.education.splice(index, 1))}
+                    />
+                  </div>
+                  <div className="entry-grid">
+                    {(
+                      [
+                        ["Credential", "credential"],
+                        ["Institution", "institution"],
+                        ["Field of study", "field_of_study"],
+                        ["Location", "location"],
+                        ["Dates", "dates"],
+                      ] as const
+                    ).map(([label, key]) => (
+                      <TextField
+                        key={key}
+                        label={label}
+                        value={item[key] ?? ""}
+                        onChange={(value) =>
+                          mutate((draft) =>
+                            Object.assign(draft.education[index], { [key]: value || null }),
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                  <ListEditor
+                    label="Education details"
+                    values={item.details}
+                    emptyMessage="No education details parsed. Add one if needed."
+                    onChange={(values) =>
+                      mutate((draft) => (draft.education[index].details = values))
+                    }
+                  />
+                </div>
+              ))
+            )}
+          </ResumeSectionBlock>
+
+          <ResumeSectionBlock
+            value="certifications"
+            title="Certifications"
+            count={resume.certifications.length}
+            changed={changed("certifications")}
+            onRestore={() => restore("certifications")}
+          >
+            <ListEditor
+              label="Certifications"
+              values={resume.certifications}
+              emptyMessage="No certifications parsed. Click '+' to add if missing."
+              onChange={(values) => mutate((draft) => (draft.certifications = values))}
+            />
+          </ResumeSectionBlock>
+
+          <ResumeSectionBlock
+            value="projects"
+            title="Projects"
+            count={resume.projects.length}
+            changed={changed("projects")}
+            onRestore={() => restore("projects")}
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  mutate((draft) =>
+                    draft.projects.push({
+                      id: newId(),
+                      name: "",
+                      role: null,
+                      dates: null,
+                      link: null,
+                      bullets: [],
+                    }),
+                  )
+                }
+              >
+                <Plus aria-hidden="true" /> Add project
+              </Button>
+            }
+          >
+            {resume.projects.length === 0 ? (
+              <EmptyParsedState label="projects" />
+            ) : (
+              resume.projects.map((project, index) => (
+                <div className="document-entry" key={project.id}>
+                  <div className="entry-action-row">
+                    <span>Project {index + 1}</span>
+                    <IconRemove
+                      label="Remove project"
+                      onClick={() => mutate((draft) => draft.projects.splice(index, 1))}
+                    />
+                  </div>
+                  <div className="entry-grid">
+                    {(
+                      [
+                        ["Project name", "name"],
+                        ["Role", "role"],
+                        ["Dates", "dates"],
+                        ["Link", "link"],
+                      ] as const
+                    ).map(([label, key]) => (
+                      <TextField
+                        key={key}
+                        label={label}
+                        value={project[key] ?? ""}
+                        onChange={(value) =>
+                          mutate((draft) =>
+                            Object.assign(draft.projects[index], { [key]: value || null }),
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                  <BulletEditor
+                    label={`${project.name || `Project ${index + 1}`} bullets`}
+                    bullets={project.bullets}
+                    max={20}
+                    onChange={(bullets) =>
+                      mutate((draft) => (draft.projects[index].bullets = bullets))
+                    }
+                  />
+                </div>
+              ))
+            )}
+          </ResumeSectionBlock>
+
+          <ResumeSectionBlock
+            value="additional"
+            title="Additional sections"
+            count={resume.additional_sections.length}
+            changed={changed("additional_sections")}
+            onRestore={() => restore("additional_sections")}
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  mutate((draft) => draft.additional_sections.push({ title: "", items: [] }))
+                }
+              >
+                <Plus aria-hidden="true" /> Add section
+              </Button>
+            }
+          >
+            {resume.additional_sections.length === 0 ? (
+              <EmptyParsedState label="additional sections" />
+            ) : (
+              resume.additional_sections.map((section, index) => (
+                <div className="document-entry" key={`additional-${index}`}>
+                  <div className="entry-action-row">
+                    <TextField
+                      label="Section title"
+                      value={section.title}
+                      onChange={(value) =>
+                        mutate((draft) => (draft.additional_sections[index].title = value))
+                      }
+                    />
+                    <IconRemove
+                      label="Remove additional section"
+                      onClick={() => mutate((draft) => draft.additional_sections.splice(index, 1))}
+                    />
+                  </div>
+                  <ListEditor
+                    label={`${section.title || "Additional section"} items`}
+                    values={section.items}
+                    emptyMessage="No items parsed. Add one if this section is incomplete."
+                    onChange={(values) =>
+                      mutate((draft) => (draft.additional_sections[index].items = values))
+                    }
+                  />
+                </div>
+              ))
+            )}
+          </ResumeSectionBlock>
+        </Accordion>
+      </article>
+
+      <div className="sticky-action-bar">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button type="button" variant="secondary">
+              <ChevronLeft aria-hidden="true" /> Back to upload
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear this in-memory session?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Returning to upload removes the extracted resume, job description, and every edit
+                from this browser session. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep reviewing</AlertDialogCancel>
+              <AlertDialogAction onClick={onBackConfirmed}>Clear and return</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <div>
+          <span className="footer-assurance">Nothing is sent until you request comparison.</span>
+          <Button type="button" size="lg" onClick={requestComparison} disabled={busy}>
+            {busy ? "Comparing evidence…" : "Request advisory comparison"}
+            <span aria-hidden="true">→</span>
+          </Button>
         </div>
-      </form>
-      {analysis && (
-        <>
-          {analysisStale && (
-            <div className="stale-banner" role="status">
-              <strong>This analysis predates your latest edits.</strong> Re-run it before relying on
-              the comparison.
-            </div>
-          )}
-          <AnalysisView analysis={analysis} />
-          <button className="button button-primary" type="button" onClick={onContinue}>
-            Choose bullets to tailor
-          </button>
-        </>
-      )}
+      </div>
     </section>
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
+function ResumeSectionBlock({
+  value,
+  title,
+  count,
+  changed,
+  action,
+  onRestore,
+  children,
+}: {
+  value: string;
+  title: string;
+  count?: number;
+  changed: boolean;
+  action?: ReactNode;
+  onRestore: () => void;
+  children: ReactNode;
+}) {
   return (
-    <div className="field">
-      <label>
-        {label}
-        {children}
-        {error && <small className="error-text">{error}</small>}
+    <AccordionItem value={value} className="resume-section">
+      <div className="resume-section-heading">
+        <AccordionTrigger>
+          <span>{title}</span>
+          {typeof count === "number" && <span className="section-count">{count}</span>}
+          {changed && <span className="changed-badge">Edited</span>}
+        </AccordionTrigger>
+        <div className="section-actions">
+          {action}
+          {changed && (
+            <Button type="button" variant="ghost" size="sm" onClick={onRestore}>
+              <RotateCcw aria-hidden="true" /> Restore section
+            </Button>
+          )}
+        </div>
+      </div>
+      <AccordionContent>{children}</AccordionContent>
+    </AccordionItem>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  changed = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  changed?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={`document-field ${changed ? "is-changed" : ""}`}>
+      <span>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} />
+      <Pencil aria-hidden="true" />
+    </label>
+  );
+}
+
+function InlineEditor({
+  label,
+  value,
+  placeholder,
+  multiline = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  multiline?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (editing) {
+    return (
+      <label className="inline-editor is-editing">
+        <span className="sr-only">{label}</span>
+        {multiline ? (
+          <textarea
+            autoFocus
+            value={value}
+            rows={4}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={() => setEditing(false)}
+          />
+        ) : (
+          <input
+            autoFocus
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={() => setEditing(false)}
+          />
+        )}
       </label>
+    );
+  }
+  return (
+    <button
+      className={`inline-editor ${value ? "" : "is-empty"}`}
+      type="button"
+      onClick={() => setEditing(true)}
+    >
+      <span>{value || placeholder}</span>
+      <Pencil aria-label={`Edit ${label}`} />
+    </button>
+  );
+}
+
+function BulletEditor({
+  label,
+  bullets,
+  max,
+  onChange,
+}: {
+  label: string;
+  bullets: { id: string; text: string }[];
+  max: number;
+  onChange: (bullets: { id: string; text: string }[]) => void;
+}) {
+  return (
+    <div className="bullet-list-editor">
+      <span className="document-subheading">{label}</span>
+      {bullets.length === 0 && <EmptyParsedState label="bullet points" compact />}
+      {bullets.map((bullet, index) => (
+        <div className="bullet-edit-row" key={bullet.id}>
+          <span aria-hidden="true">•</span>
+          <InlineEditor
+            label={`${label}, bullet ${index + 1}`}
+            value={bullet.text}
+            placeholder="Click to add bullet wording."
+            multiline
+            onChange={(value) =>
+              onChange(
+                bullets.map((item) => (item.id === bullet.id ? { ...item, text: value } : item)),
+              )
+            }
+          />
+          <IconRemove
+            label={`Remove bullet ${index + 1}`}
+            onClick={() => onChange(bullets.filter((item) => item.id !== bullet.id))}
+          />
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={bullets.length >= max}
+        onClick={() => onChange([...bullets, { id: newId(), text: "" }])}
+      >
+        <Plus aria-hidden="true" /> Add bullet
+      </Button>
     </div>
+  );
+}
+
+function ListEditor({
+  label,
+  values,
+  emptyMessage,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  emptyMessage: string;
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <div className="list-editor">
+      {values.length === 0 && (
+        <EmptyParsedState label={label.toLowerCase()} message={emptyMessage} compact />
+      )}
+      {values.map((value, index) => (
+        <div className="list-edit-row" key={`${label}-${index}`}>
+          <InlineEditor
+            label={`${label} ${index + 1}`}
+            value={value}
+            placeholder="Click to enter a value."
+            onChange={(next) =>
+              onChange(values.map((item, itemIndex) => (itemIndex === index ? next : item)))
+            }
+          />
+          <IconRemove
+            label={`Remove ${label.toLowerCase()} ${index + 1}`}
+            onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}
+          />
+        </div>
+      ))}
+      <Button type="button" variant="ghost" size="sm" onClick={() => onChange([...values, ""])}>
+        <Plus aria-hidden="true" /> Add {label.toLowerCase().replace(/s$/, "")}
+      </Button>
+    </div>
+  );
+}
+
+function EmptyParsedState({
+  label,
+  message,
+  compact: isCompact = false,
+}: {
+  label: string;
+  message?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`parsed-empty-state ${isCompact ? "is-compact" : ""}`}>
+      <Plus aria-hidden="true" />
+      <span>{message ?? `No ${label} parsed. Click '+' to add if missing.`}</span>
+    </div>
+  );
+}
+
+function IconRemove({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="icon" aria-label={label} onClick={onClick}>
+      <Trash2 aria-hidden="true" />
+    </Button>
   );
 }

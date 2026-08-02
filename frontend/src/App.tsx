@@ -1,8 +1,21 @@
+import { Check, CircleHelp, LockKeyhole, RotateCcw, ShieldCheck } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { ExportStep } from "./components/ExportStep";
 import { ReviewStep } from "./components/ReviewStep";
 import { TailorStep } from "./components/TailorStep";
 import { UploadStep } from "./components/UploadStep";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./components/ui/alert-dialog";
+import { Button } from "./components/ui/button";
 import { rewritesAsResponse, SessionProvider, useSession } from "./SessionContext";
 import type { Step } from "./types";
 
@@ -11,6 +24,7 @@ const labels = ["Upload", "Review", "Tailor", "Export"] as const;
 function Application() {
   const {
     state,
+    dispatch,
     retry,
     downloadUrl,
     uploadResume,
@@ -20,99 +34,129 @@ function Application() {
     reanalyze,
     createDocx,
     clearSession,
+    cancelActiveRequest,
     setStep,
   } = useSession();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const rewrites = rewritesAsResponse(state);
+  const hasPrivateData = state.resume !== null || state.jobDescription.length > 0;
 
   useEffect(() => {
     headingRef.current?.focus();
   }, [state.step]);
 
   return (
-    <div className="app-shell">
-      <header className="site-header">
-        <div>
-          <p className="kicker">PRIVATE DOCUMENT WORKSPACE</p>
-          <p className="brand">Beat ATS</p>
-          <p className="tagline">Tailor to the role. Keep every fact yours.</p>
+    <div className="application-shell">
+      <header className="application-header">
+        <a className="brand-lockup" href="/" aria-label="Beat ATS home">
+          <span className="brand-mark">B</span>
+          <span>
+            <strong>Beat ATS</strong>
+            <small>Evidence-led resume tailoring</small>
+          </span>
+        </a>
+        <div className="header-actions">
+          <span className="privacy-status">
+            <ShieldCheck aria-hidden="true" /> Private session
+          </span>
+          <a className="header-link" href="/docs" target="_blank" rel="noreferrer">
+            <CircleHelp aria-hidden="true" /> Help & API
+          </a>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" disabled={!hasPrivateData}>
+                <RotateCcw aria-hidden="true" /> Clear session
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear all session data?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the uploaded resume, job description, analysis, rewrites, and export
+                  file from memory. It cannot be recovered.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep session</AlertDialogCancel>
+                <AlertDialogAction onClick={clearSession}>Clear session</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
-        <button
-          className="button button-secondary clear-button"
-          type="button"
-          onClick={clearSession}
-        >
-          Clear session
-        </button>
       </header>
-      <nav className="progress-register" aria-label="Tailoring progress">
-        {labels.map((label, index) => {
-          const step = (index + 1) as Step;
-          const complete = state.step > step;
-          return (
-            <div
-              className={`progress-step ${complete ? "complete" : ""} ${state.step === step ? "current" : ""}`}
-              aria-current={state.step === step ? "step" : undefined}
-              key={label}
-            >
-              <span className="progress-marker">{complete ? "✓" : step}</span>
-              <span>{label}</span>
-              <span className="progress-status">
-                {complete ? "completed" : state.step === step ? "current" : "pending"}
-              </span>
-            </div>
-          );
-        })}
+
+      <nav className="workflow-stepper" aria-label="Resume tailoring progress">
+        <ol>
+          {labels.map((label, index) => {
+            const step = (index + 1) as Step;
+            const complete = state.step > step;
+            const current = state.step === step;
+            return (
+              <li
+                className={`${complete ? "is-complete" : ""} ${current ? "is-current" : ""}`}
+                key={label}
+              >
+                <span className="step-marker" aria-hidden="true">
+                  {complete ? <Check /> : step}
+                </span>
+                <span>
+                  <small>Stage {step}</small>
+                  <strong>{label}</strong>
+                </span>
+                {index < labels.length - 1 && <span className="step-line" aria-hidden="true" />}
+              </li>
+            );
+          })}
+        </ol>
       </nav>
-      <main className="work-surface">
-        <div className="surface-heading">
-          <p className="surface-index">STAGE {state.step} / 04</p>
-          <h1 ref={headingRef} tabIndex={-1}>
-            {labels[state.step - 1]}
-          </h1>
-          {state.activeRequest && (
-            <p className="status-line" role="status">
-              {state.activeRequest}…
-            </p>
-          )}
-        </div>
+
+      <main className="application-main">
+        <h1 className="sr-only" ref={headingRef} tabIndex={-1}>
+          Beat ATS · {labels[state.step - 1]}
+        </h1>
         {state.error && (
           <div
-            className={`alert ${state.error.retryable ? "alert-warning" : "alert-error"}`}
+            className={`request-alert ${state.error.retryable ? "is-warning" : "is-error"}`}
             role="alert"
           >
-            <strong>
-              {state.error.retryable
-                ? "The service needs another try."
-                : "The request could not be completed."}
-            </strong>
-            <span>{state.error.message}</span>
-            {state.error.requestId && <small>Request ID: {state.error.requestId}</small>}
+            <div>
+              <strong>
+                {state.error.retryable
+                  ? "This request can be retried."
+                  : "The request could not be completed."}
+              </strong>
+              <span>{state.error.message}</span>
+              {state.error.requestId && <small>Request ID: {state.error.requestId}</small>}
+            </div>
             {state.error.retryable && retry && (
-              <button className="button button-secondary" type="button" onClick={retry}>
+              <Button type="button" variant="secondary" onClick={retry}>
                 Retry
-              </button>
+              </Button>
             )}
           </div>
         )}
+
         {state.step === 1 && (
           <UploadStep
             config={state.config}
             busy={Boolean(state.activeRequest)}
+            uploadProgress={state.uploadProgress}
+            ingestionPhase={state.ingestionPhase}
+            onCancel={cancelActiveRequest}
             onUpload={uploadResume}
           />
         )}
-        {state.step === 2 && state.resume && (
+        {state.step === 2 && state.resume && state.originalResume && (
           <ReviewStep
             resume={state.resume}
+            original={state.originalResume}
             warnings={state.warnings.filter(
               (warning) => !state.dismissedWarnings.includes(warning),
             )}
-            analysis={state.analysis}
-            analysisStale={state.analysisStale}
             busy={Boolean(state.activeRequest)}
             onSave={saveResume}
-            onContinue={() => setStep(3)}
+            onDismissWarning={(warning) => dispatch({ type: "warningDismissed", warning })}
+            onBackConfirmed={clearSession}
           />
         )}
         {state.step === 3 && state.resume && (
@@ -142,11 +186,13 @@ function Application() {
           />
         )}
       </main>
-      <footer className="privacy-footer">
+
+      <footer className="application-footer">
         <span>
-          In-memory session only. Refreshing or clearing this page removes the working document.
+          <LockKeyhole aria-hidden="true" /> In-memory only. No accounts, autosave, or browser
+          storage.
         </span>
-        <a href="/docs">API documentation</a>
+        <span>Advisory output · You approve every applied word</span>
       </footer>
     </div>
   );
