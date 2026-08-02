@@ -3,9 +3,15 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 class ResizeObserverMock {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() {
+    return undefined;
+  }
+  unobserve() {
+    return undefined;
+  }
+  disconnect() {
+    return undefined;
+  }
 }
 
 globalThis.ResizeObserver = ResizeObserverMock;

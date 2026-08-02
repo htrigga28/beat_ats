@@ -522,6 +522,67 @@ async def _ingest_resume_data(
     )
 
 
+async def _queued_ingestion_progress(
+    task: asyncio.Task[ResumeIngestionResponse],
+    queue: asyncio.Queue[IngestionProgressEvent],
+) -> AsyncIterator[str]:
+    while not task.done() or not queue.empty():
+        if queue.empty():
+            await asyncio.wait({task}, timeout=0.01)
+            continue
+        yield (await queue.get()).model_dump_json() + "\n"
+
+
+def _streamed_ingestion_error(exc: IngestionError | GeminiProviderError) -> str:
+    if isinstance(exc, IngestionError):
+        error = exc.error
+    else:
+        error = ApiError(
+            code="gemini_provider_error",
+            message=str(exc),
+            retryable=exc.retryable,
+        )
+    return IngestionErrorEvent(error=error).model_dump_json() + "\n"
+
+
+async def _ingestion_events(
+    data: bytes,
+    filename: str,
+    *,
+    allow_vision_fallback: bool,
+    service: GeminiService,
+    max_upload_bytes: int,
+) -> AsyncIterator[str]:
+    queue: asyncio.Queue[IngestionProgressEvent] = asyncio.Queue()
+
+    async def on_progress(event: IngestionProgressEvent) -> None:
+        await queue.put(event)
+
+    task = asyncio.create_task(
+        _ingest_resume_data(
+            data,
+            filename,
+            allow_vision_fallback=allow_vision_fallback,
+            service=service,
+            max_upload_bytes=max_upload_bytes,
+            on_progress=on_progress,
+        )
+    )
+    try:
+        async for event in _queued_ingestion_progress(task, queue):
+            yield event
+        result = await task
+        yield IngestionResultEvent(data=result).model_dump_json() + "\n"
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    except (IngestionError, GeminiProviderError) as exc:
+        yield _streamed_ingestion_error(exc)
+    finally:
+        if not task.done():
+            task.cancel()
+
+
 @app.post(
     "/api/v1/resumes/ingest/stream",
     response_model=IngestionStreamEvent,
@@ -561,52 +622,14 @@ async def ingest_resume_stream(
             f"Resume uploads must be {max_upload_bytes / (1024 * 1024):g} MB or smaller.",
         )
 
-    async def events() -> AsyncIterator[str]:
-        queue: asyncio.Queue[IngestionProgressEvent] = asyncio.Queue()
-
-        async def on_progress(event: IngestionProgressEvent) -> None:
-            await queue.put(event)
-
-        task = asyncio.create_task(
-            _ingest_resume_data(
-                data,
-                filename,
-                allow_vision_fallback=allow_vision_fallback,
-                service=service,
-                max_upload_bytes=max_upload_bytes,
-                on_progress=on_progress,
-            )
-        )
-        try:
-            while not task.done() or not queue.empty():
-                if queue.empty():
-                    await asyncio.wait({task}, timeout=0.01)
-                    continue
-                yield (await queue.get()).model_dump_json() + "\n"
-            result = await task
-            yield IngestionResultEvent(data=result).model_dump_json() + "\n"
-        except asyncio.CancelledError:
-            task.cancel()
-            raise
-        except IngestionError as exc:
-            yield IngestionErrorEvent(error=exc.error).model_dump_json() + "\n"
-        except GeminiProviderError as exc:
-            yield (
-                IngestionErrorEvent(
-                    error=ApiError(
-                        code="gemini_provider_error",
-                        message=str(exc),
-                        retryable=exc.retryable,
-                    )
-                ).model_dump_json()
-                + "\n"
-            )
-        finally:
-            if not task.done():
-                task.cancel()
-
     return StreamingResponse(
-        events(),
+        _ingestion_events(
+            data,
+            filename,
+            allow_vision_fallback=allow_vision_fallback,
+            service=service,
+            max_upload_bytes=max_upload_bytes,
+        ),
         media_type="application/jsonl",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

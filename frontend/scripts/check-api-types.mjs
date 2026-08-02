@@ -5,14 +5,11 @@ import { join } from "node:path";
 
 const directory = mkdtempSync(join(tmpdir(), "beat-ats-openapi-"));
 const generated = join(directory, "api-types.ts");
+const generator = join(process.cwd(), "node_modules", ".bin", "openapi-typescript");
 try {
-  execFileSync(
-    "npx",
-    ["openapi-typescript", "http://127.0.0.1:8000/openapi.json", "-o", generated],
-    {
-      stdio: "inherit",
-    },
-  );
+  execFileSync(generator, ["http://127.0.0.1:8000/openapi.json", "-o", generated], {
+    stdio: "inherit",
+  });
   const expected = readFileSync("src/api-types.ts", "utf8");
   const actual = readFileSync(generated, "utf8");
   if (expected !== actual) {
