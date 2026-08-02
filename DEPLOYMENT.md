@@ -4,6 +4,8 @@
 
 The Vercel deployment serves the FastAPI service through `index.py`. After deployment:
 
+Production URL: https://beat-ats-teal.vercel.app
+
 - `/` is the API landing response
 - `/healthz` is the health check
 - `/docs` is the interactive API documentation
