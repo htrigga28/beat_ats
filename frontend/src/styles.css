@@ -1,21 +1,44 @@
+@import "@fontsource-variable/inter";
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --animate-accordion-down: accordion-down 300ms ease-in-out;
+  --animate-accordion-up: accordion-up 300ms ease-in-out;
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
 :root {
-  --paper: #f5f7f3;
+  --paper: #f8fafc;
   --sheet: #fff;
-  --ink: #17231c;
-  --muted: #53615a;
-  --rule: #c9d0c8;
-  --green: #176b4d;
-  --green-deep: #0e5038;
-  --warning: #9a5b00;
-  --warning-bg: #fff7e8;
-  --error: #a33a35;
-  --error-bg: #fff0ef;
-  font-family:
-    ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  --ink: #0f172a;
+  --muted: #475569;
+  --rule: #e2e8f0;
+  --green: #4f46e5;
+  --green-deep: #4338ca;
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --error: #dc2626;
+  --error-bg: #fef2f2;
+  font-family: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   color: var(--ink);
   background: var(--paper);
   font-synthesis: none;
@@ -40,6 +63,17 @@ body {
   margin: 0;
   min-width: 320px;
   background: var(--paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
 button,
 input,
