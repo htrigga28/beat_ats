@@ -93,10 +93,14 @@ jobs:
         run: python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=85
 
       - name: Gemini model compatibility smoke test
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python -m scripts.verify_gemini_model
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is not configured; skipping provider smoke test."
+            exit 0
+          fi
+          python -m scripts.verify_gemini_model
 
       - name: Smoke test compiled app
         run: |
