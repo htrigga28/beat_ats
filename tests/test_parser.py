@@ -106,6 +106,13 @@ def test_extract_resume_rejects_oversized_upload_before_parsing() -> None:
         extract_resume(b"%PDF-" + b"0" * (10 * 1024 * 1024), "resume.pdf")
 
 
+def test_extract_resume_accepts_runtime_upload_limit() -> None:
+    with pytest.raises(DocumentTooLargeError, match="1 MB"):
+        extract_resume(
+            b"%PDF-" + b"0" * (1 * 1024 * 1024), "resume.pdf", max_upload_bytes=1 * 1024 * 1024
+        )
+
+
 def test_extract_docx_rejects_invalid_zip() -> None:
     with pytest.raises(CorruptDocumentError):
         extract_docx_text(b"PK\x03\x04not-a-docx")

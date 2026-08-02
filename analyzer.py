@@ -8,6 +8,7 @@ import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Never, TypeVar
 from uuid import uuid4
 
@@ -20,7 +21,6 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 
 from generator import generate_resume_docx
 from parser import (
-    MAX_UPLOAD_BYTES,
     CorruptDocumentError,
     DocumentTooLargeError,
     EncryptedDocumentError,
@@ -39,6 +39,7 @@ from schemas import (
     HealthResponse,
     ResumeDocument,
     ResumeIngestionResponse,
+    RuntimeConfig,
 )
 from settings import Settings, get_settings
 
@@ -85,11 +86,56 @@ class GeminiProviderError(RuntimeError):
         self.status_code = status_code
 
 
+_GEMINI_SCHEMA_KEYS = frozenset(
+    {
+        "$defs",
+        "$ref",
+        "additionalProperties",
+        "anyOf",
+        "description",
+        "enum",
+        "format",
+        "items",
+        "maximum",
+        "minimum",
+        "oneOf",
+        "prefixItems",
+        "properties",
+        "required",
+        "type",
+    }
+)
+
+
+def _gemini_json_schema(schema: dict[str, object]) -> dict[str, object]:
+    """Keep only the JSON Schema subset accepted by Gemini structured output."""
+
+    def sanitize(node: object, *, mapping: bool = False) -> object:
+        if isinstance(node, dict):
+            result: dict[str, object] = {}
+            for key, value in node.items():
+                if mapping:
+                    result[key] = sanitize(value)
+                elif key in _GEMINI_SCHEMA_KEYS:
+                    result[key] = sanitize(value, mapping=key in {"$defs", "properties"})
+            return result
+        if isinstance(node, list):
+            return [sanitize(item) for item in node]
+        return node
+
+    sanitized = sanitize(schema)
+    assert isinstance(sanitized, dict)
+    return sanitized
+
+
 def _is_transient(exc: BaseException) -> bool:
     if isinstance(exc, (TimeoutError, errors.ServerError)):
         return True
     if isinstance(exc, errors.ClientError):
-        return getattr(exc, "code", None) in {408, 429}
+        # A 429 may represent a per-minute or daily quota. Retrying immediately
+        # would spend more quota without changing the outcome; surface it once
+        # and let the caller retry after the provider's window resets.
+        return getattr(exc, "code", None) == 408
     return False
 
 
@@ -116,7 +162,7 @@ class GeminiService:
             # ``additionalProperties`` constraints. ``response_json_schema``
             # accepts the JSON Schema emitted by Pydantic; the returned value
             # is still validated again below before it crosses our boundary.
-            response_json_schema=schema.model_json_schema(),
+            response_json_schema=_gemini_json_schema(schema.model_json_schema()),
         )
         try:
             async for attempt in AsyncRetrying(
@@ -136,9 +182,13 @@ class GeminiService:
                     )
         except errors.ClientError as exc:
             code = getattr(exc, "code", None)
+            LOGGER.warning(
+                "gemini_client_error code=%s details=%s", code, getattr(exc, "details", None)
+            )
             if code == 429:
                 raise GeminiProviderError(
-                    "Gemini rate limit reached. Try again shortly.",
+                    "Gemini rate limit reached. Wait for the quota window "
+                    "to reset, then try again.",
                     retryable=True,
                     status_code=429,
                 ) from exc
@@ -336,13 +386,14 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok", gemini_configured=get_settings().gemini_api_key is not None)
 
 
-@app.get("/", include_in_schema=False)
-async def root() -> dict[str, str]:
-    return {
-        "name": "Beat ATS Resume Tailoring API",
-        "docs": "/docs",
-        "health": "/healthz",
-    }
+@app.get("/api/v1/config", response_model=RuntimeConfig)
+async def runtime_config() -> RuntimeConfig:
+    return RuntimeConfig(
+        max_upload_bytes=get_settings().max_upload_bytes,
+        accepted_extensions=["pdf", "docx"],
+        vision_fallback_available=True,
+        gemini_model=get_settings().gemini_model,
+    )
 
 
 @app.post("/api/v1/resumes/ingest", response_model=ResumeIngestionResponse)
@@ -353,12 +404,21 @@ async def ingest_resume(
     allow_vision_fallback: Annotated[bool, Form()] = False,
 ) -> ResumeIngestionResponse:
     _require_consent(ai_processing_consent)
-    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    max_upload_bytes = get_settings().max_upload_bytes
+    data = await file.read(max_upload_bytes + 1)
     await file.close()
-    if len(data) > MAX_UPLOAD_BYTES:
-        _api_error(413, "document_too_large", "Resume uploads must be 10 MB or smaller.")
+    if len(data) > max_upload_bytes:
+        _api_error(
+            413,
+            "document_too_large",
+            f"Resume uploads must be {max_upload_bytes / (1024 * 1024):g} MB or smaller.",
+        )
     try:
-        extraction = extract_resume(data, file.filename or "resume")
+        extraction = extract_resume(
+            data,
+            file.filename or "resume",
+            max_upload_bytes=max_upload_bytes,
+        )
     except DocumentTooLargeError as exc:
         _api_error(413, "document_too_large", str(exc))
     except UnsupportedFileTypeError as exc:
@@ -437,3 +497,11 @@ async def gemini_error_handler(request: Request, exc: GeminiProviderError) -> Re
         code="gemini_provider_error", message=str(exc), retryable=exc.retryable
     ).model_dump_json()
     return Response(content=payload, status_code=exc.status_code, media_type="application/json")
+
+
+# Vercel serves ``public/`` as static output outside the Python function bundle.
+# The mount is still useful locally and in Docker, but trying to initialize it in
+# the function when that bundle does not contain the directory causes every SPA
+# deep link to fail with a 500 before Vercel's static rewrite can run.
+if Path("public").is_dir():
+    app.frontend("/", directory="public", fallback="index.html")

@@ -17,10 +17,12 @@ class Settings(BaseSettings):
     )
 
     gemini_api_key: SecretStr | None = None
-    gemini_model: str = "gemini-3.6-flash"
+    # Stable, multimodal Flash-Lite model selected for high-frequency free-tier use.
+    # Keep this overrideable so a billing-enabled deployment can choose differently.
+    gemini_model: str = "gemini-3.1-flash-lite"
     gemini_timeout_seconds: float = Field(default=60.0, ge=5.0, le=180.0)
     gemini_max_attempts: int = Field(default=3, ge=1, le=5)
-    backend_url: str = "http://127.0.0.1:8000"
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1 * 1024 * 1024)
 
 
 @lru_cache

@@ -11,6 +11,7 @@ from reportlab.pdfgen import canvas
 from analyzer import (
     GeminiProviderError,
     GeminiService,
+    _gemini_json_schema,
     app,
     get_gemini_service,
     validate_rewrite_response,
@@ -145,11 +146,55 @@ def test_api_root_describes_available_routes() -> None:
         response = client.get("/")
 
     assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Beat ATS" in response.text
+
+
+def test_frontend_fallback_serves_spa_for_client_routes() -> None:
+    with TestClient(app) as client:
+        response = client.get("/review", headers={"accept": "text/html"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+
+
+def test_runtime_config_exposes_default_upload_contract() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/config")
+
+    assert response.status_code == 200
     assert response.json() == {
-        "name": "Beat ATS Resume Tailoring API",
-        "docs": "/docs",
-        "health": "/healthz",
+        "max_upload_bytes": 10 * 1024 * 1024,
+        "accepted_extensions": ["pdf", "docx"],
+        "vision_fallback_available": True,
+        "gemini_model": "gemini-3.1-flash-lite",
     }
+
+
+def test_gemini_schema_removes_unsupported_pydantic_constraints() -> None:
+    schema = _gemini_json_schema(ExtractedResumeDocument.model_json_schema())
+    serialized = str(schema)
+
+    assert "minLength" not in serialized
+    assert "maxLength" not in serialized
+    assert "default" not in serialized
+    assert "$defs" in schema
+    assert "properties" in schema
+
+
+def test_ingest_uses_runtime_upload_limit(
+    fake_service: FakeGeminiService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("analyzer.get_settings", lambda: Settings(max_upload_bytes=4 * 1024 * 1024))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest",
+            files={"file": ("resume.pdf", b"%PDF-" + b"0" * (4 * 1024 * 1024), "application/pdf")},
+            data={"ai_processing_consent": "true", "allow_vision_fallback": "true"},
+        )
+
+    assert response.status_code == 413
+    assert "4 MB" in response.json()["detail"]["message"]
 
 
 def test_ingest_scanned_pdf_requires_explicit_vision_permission(
@@ -305,12 +350,14 @@ async def test_gemini_service_structures_text_with_schema_config() -> None:
 
     assert result.contact.full_name == "Jane Doe"
     call = client.models.calls[0]
-    assert call["model"] == "gemini-3.6-flash"
+    assert call["model"] == "gemini-3.1-flash-lite"
     assert "<resume>" in str(call["contents"])
     config = call["config"]
     assert isinstance(config, types.GenerateContentConfig)
     assert config.response_mime_type == "application/json"
-    assert config.response_json_schema == ExtractedResumeDocument.model_json_schema()
+    assert config.response_json_schema == _gemini_json_schema(
+        ExtractedResumeDocument.model_json_schema()
+    )
     assert config.response_schema is None
 
 

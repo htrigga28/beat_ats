@@ -230,3 +230,10 @@ class ApiError(StrictModel):
 class HealthResponse(StrictModel):
     status: str
     gemini_configured: bool
+
+
+class RuntimeConfig(StrictModel):
+    max_upload_bytes: int = Field(ge=1)
+    accepted_extensions: list[str] = Field(min_length=1, max_length=10)
+    vision_fallback_available: bool
+    gemini_model: str = Field(min_length=1, max_length=128)
