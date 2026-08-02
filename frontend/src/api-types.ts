@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resumes/ingest/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ingest Resume Stream */
+        post: operations["ingest_resume_stream_api_v1_resumes_ingest_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analyses": {
         parameters: {
             query?: never;
@@ -125,8 +142,32 @@ export interface components {
             /** Ai Processing Consent */
             ai_processing_consent: boolean;
         };
+        /** ApiError */
+        ApiError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+        };
         /** Body_ingest_resume_api_v1_resumes_ingest_post */
         Body_ingest_resume_api_v1_resumes_ingest_post: {
+            /** File */
+            file: string;
+            /** Ai Processing Consent */
+            ai_processing_consent: boolean;
+            /**
+             * Allow Vision Fallback
+             * @default false
+             */
+            allow_vision_fallback: boolean;
+        };
+        /** Body_ingest_resume_stream_api_v1_resumes_ingest_stream_post */
+        Body_ingest_resume_stream_api_v1_resumes_ingest_stream_post: {
             /** File */
             file: string;
             /** Ai Processing Consent */
@@ -216,6 +257,45 @@ export interface components {
             /** Gemini Configured */
             gemini_configured: boolean;
         };
+        /** IngestionErrorEvent */
+        IngestionErrorEvent: {
+            /**
+             * Type
+             * @default error
+             * @constant
+             */
+            type: "error";
+            error: components["schemas"]["ApiError"];
+        };
+        /** IngestionProgressEvent */
+        IngestionProgressEvent: {
+            /**
+             * Type
+             * @default progress
+             * @constant
+             */
+            type: "progress";
+            stage: components["schemas"]["IngestionStage"];
+            /** Sequence */
+            sequence: number;
+            /** Message */
+            message: string;
+        };
+        /** IngestionResultEvent */
+        IngestionResultEvent: {
+            /**
+             * Type
+             * @default result
+             * @constant
+             */
+            type: "result";
+            data: components["schemas"]["ResumeIngestionResponse"];
+        };
+        /**
+         * IngestionStage
+         * @enum {string}
+         */
+        IngestionStage: "parsing" | "structuring" | "validating";
         /**
          * KeywordCategory
          * @enum {string}
@@ -415,6 +495,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeIngestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_resume_stream_api_v1_resumes_ingest_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_ingest_resume_stream_api_v1_resumes_ingest_stream_post"];
+            };
+        };
+        responses: {
+            /** @description One IngestionStreamEvent per JSON Lines record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/jsonl": components["schemas"]["IngestionProgressEvent"] | components["schemas"]["IngestionResultEvent"] | components["schemas"]["IngestionErrorEvent"];
                 };
             };
             /** @description Validation Error */

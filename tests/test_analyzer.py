@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Generator
 from io import BytesIO
 
 import pytest
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from google.genai import types
 from reportlab.pdfgen import canvas
@@ -14,6 +17,7 @@ from analyzer import (
     _gemini_json_schema,
     app,
     get_gemini_service,
+    ingest_resume_stream,
     validate_rewrite_response,
 )
 from schemas import (
@@ -45,6 +49,13 @@ def _extracted_resume() -> ExtractedResumeDocument:
                     "employer": "Example",
                     "title": "Frontend Engineer",
                     "bullets": [{"text": "Built React interfaces used by 10 teams"}],
+                }
+            ],
+            "projects": [
+                {
+                    "name": "Design System",
+                    "role": "Maintainer",
+                    "bullets": [{"text": "Published reusable components for 6 products"}],
                 }
             ],
         }
@@ -89,24 +100,32 @@ class FakeGeminiService:
     async def rewrite(
         self, resume: ResumeDocument, job_description: str, bullet_ids: list[str]
     ) -> BulletRewriteResponse:
-        bullet = resume.work_experience[0].bullets[0]
+        bullets = {
+            bullet.id: bullet
+            for collection in (resume.work_experience, resume.projects)
+            for item in collection
+            for bullet in item.bullets
+        }
         return BulletRewriteResponse.model_validate(
             {
                 "items": [
                     {
-                        "bullet_id": bullet.id,
-                        "original_text": bullet.text,
+                        "bullet_id": bullet_id,
+                        "original_text": bullets[bullet_id].text,
                         "alternatives": [
                             {
-                                "text": "Built accessible React interfaces used by 10 teams",
+                                "text": bullets[bullet_id]
+                                .text.replace("Built", "Built accessible")
+                                .replace("Published", "Published accessible"),
                                 "incorporated_keywords": ["accessible"],
                             },
                             {
-                                "text": "Delivered React interfaces supporting 10 product teams",
-                                "incorporated_keywords": ["React"],
+                                "text": f"Delivered {bullets[bullet_id].text.lower()}",
+                                "incorporated_keywords": ["delivered"],
                             },
                         ],
                     }
+                    for bullet_id in bullet_ids
                 ]
             }
         )
@@ -139,6 +158,136 @@ def test_ingest_text_pdf_without_persisting_upload(fake_service: FakeGeminiServi
     assert response.json()["resume"]["contact"]["full_name"] == "Jane Doe"
     assert fake_service.text_calls
     assert fake_service.pdf_calls == 0
+
+
+def test_stream_ingestion_emits_ordered_progress_and_result(
+    fake_service: FakeGeminiService,
+) -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest/stream",
+            files={
+                "file": (
+                    "resume.pdf",
+                    _pdf_bytes("Frontend engineer resume content"),
+                    "application/pdf",
+                )
+            },
+            data={"ai_processing_consent": "true", "allow_vision_fallback": "true"},
+        )
+
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/jsonl")
+    assert [event["type"] for event in events] == [
+        "progress",
+        "progress",
+        "progress",
+        "result",
+    ]
+    assert [event["stage"] for event in events[:-1]] == [
+        "parsing",
+        "structuring",
+        "validating",
+    ]
+    assert events[-1]["data"]["resume"]["contact"]["full_name"] == "Jane Doe"
+
+
+def test_stream_ingestion_emits_terminal_domain_error(fake_service: FakeGeminiService) -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest/stream",
+            files={"file": ("resume.pdf", _pdf_bytes(), "application/pdf")},
+            data={"ai_processing_consent": "true", "allow_vision_fallback": "false"},
+        )
+
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert response.status_code == 200
+    assert events[0]["stage"] == "parsing"
+    assert events[-1] == {
+        "type": "error",
+        "error": {
+            "code": "vision_consent_required",
+            "message": "This PDF requires Gemini vision. Enable the vision fallback to continue.",
+            "retryable": False,
+        },
+    }
+
+
+def test_stream_ingestion_emits_terminal_provider_error(
+    fake_service: FakeGeminiService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fail_structure(text: str) -> ExtractedResumeDocument:
+        del text
+        raise GeminiProviderError("Gemini is temporarily unavailable.", retryable=True)
+
+    monkeypatch.setattr(fake_service, "structure_resume_text", fail_structure)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest/stream",
+            files={
+                "file": (
+                    "resume.pdf",
+                    _pdf_bytes("Frontend engineer resume content"),
+                    "application/pdf",
+                )
+            },
+            data={"ai_processing_consent": "true", "allow_vision_fallback": "true"},
+        )
+
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [event["type"] for event in events] == ["progress", "progress", "error"]
+    assert events[-1]["error"] == {
+        "code": "gemini_provider_error",
+        "message": "Gemini is temporarily unavailable.",
+        "retryable": True,
+    }
+
+
+def test_stream_ingestion_keeps_pre_stream_http_failures(
+    fake_service: FakeGeminiService,
+) -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest/stream",
+            files={"file": ("resume.pdf", _pdf_bytes(), "application/pdf")},
+            data={"ai_processing_consent": "false", "allow_vision_fallback": "false"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "ai_consent_required"
+
+
+@pytest.mark.asyncio
+async def test_stream_ingestion_cancels_provider_work_when_consumer_disconnects() -> None:
+    class BlockingService(FakeGeminiService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.cancelled = asyncio.Event()
+
+        async def structure_resume_text(self, text: str) -> ExtractedResumeDocument:
+            del text
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.cancelled.set()
+                raise
+
+    service = BlockingService()
+    upload = UploadFile(
+        file=BytesIO(_pdf_bytes("Frontend engineer resume content")),
+        filename="resume.pdf",
+    )
+    response = await ingest_resume_stream(upload, True, service, True)
+    iterator = response.body_iterator
+
+    first_event = json.loads(await anext(iterator))
+    assert first_event["stage"] == "parsing"
+    await service.started.wait()
+    await iterator.aclose()
+    await asyncio.wait_for(service.cancelled.wait(), timeout=1)
 
 
 def test_api_root_describes_available_routes() -> None:
@@ -285,6 +434,33 @@ def test_rewrite_validation_rejects_new_metrics() -> None:
         validate_rewrite_response(resume, [bullet.id], response)
 
 
+def test_rewrite_validation_accepts_project_bullets() -> None:
+    resume = _extracted_resume().to_resume_document()
+    bullet = resume.projects[0].bullets[0]
+    response = BulletRewriteResponse.model_validate(
+        {
+            "items": [
+                {
+                    "bullet_id": bullet.id,
+                    "original_text": bullet.text,
+                    "alternatives": [
+                        {
+                            "text": "Published accessible reusable components for 6 products",
+                            "incorporated_keywords": ["accessible"],
+                        },
+                        {
+                            "text": "Delivered reusable components across 6 product teams",
+                            "incorporated_keywords": ["product"],
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert validate_rewrite_response(resume, [bullet.id], response) == response
+
+
 def test_docx_endpoint_streams_word_document(fake_service: FakeGeminiService) -> None:
     resume = _extracted_resume().to_resume_document()
     with TestClient(app) as client:
@@ -302,6 +478,24 @@ def test_rewrite_endpoint_returns_validated_alternatives(
 ) -> None:
     resume = _extracted_resume().to_resume_document()
     bullet_id = resume.work_experience[0].bullets[0].id
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/rewrites",
+            json={
+                "resume": resume.model_dump(mode="json"),
+                "job_description": "Senior frontend engineer " * 10,
+                "bullet_ids": [bullet_id],
+                "ai_processing_consent": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["bullet_id"] == bullet_id
+
+
+def test_rewrite_endpoint_accepts_project_bullets(fake_service: FakeGeminiService) -> None:
+    resume = _extracted_resume().to_resume_document()
+    bullet_id = resume.projects[0].bullets[0].id
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/rewrites",

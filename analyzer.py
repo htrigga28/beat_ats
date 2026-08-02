@@ -13,7 +13,7 @@ from typing import Annotated, Never, TypeVar
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel, ValidationError
@@ -37,6 +37,11 @@ from schemas import (
     ExtractionMethod,
     GapAnalysis,
     HealthResponse,
+    IngestionErrorEvent,
+    IngestionProgressEvent,
+    IngestionResultEvent,
+    IngestionStage,
+    IngestionStreamEvent,
     ResumeDocument,
     ResumeIngestionResponse,
     RuntimeConfig,
@@ -84,6 +89,15 @@ class GeminiProviderError(RuntimeError):
         super().__init__(message)
         self.retryable = retryable
         self.status_code = status_code
+
+
+class IngestionError(RuntimeError):
+    """An ingestion failure that can cross JSON and streaming boundaries."""
+
+    def __init__(self, status_code: int, error: ApiError) -> None:
+        super().__init__(error.message)
+        self.status_code = status_code
+        self.error = error
 
 
 _GEMINI_SCHEMA_KEYS = frozenset(
@@ -251,7 +265,7 @@ class GeminiService:
         self, resume: ResumeDocument, job_description: str, bullet_ids: list[str]
     ) -> BulletRewriteResponse:
         selected = set(bullet_ids)
-        roles = []
+        roles: list[dict[str, object]] = []
         for role in resume.work_experience:
             bullets = [bullet.model_dump() for bullet in role.bullets if bullet.id in selected]
             if bullets:
@@ -263,9 +277,22 @@ class GeminiService:
                         "bullets": bullets,
                     }
                 )
+        projects: list[dict[str, object]] = []
+        for project in resume.projects:
+            bullets = [bullet.model_dump() for bullet in project.bullets if bullet.id in selected]
+            if bullets:
+                projects.append(
+                    {
+                        "name": project.name,
+                        "role": project.role,
+                        "dates": project.dates,
+                        "bullets": bullets,
+                    }
+                )
+        context = {"work_experience": roles, "projects": projects}
         return await self._generate(
             contents=(
-                f"<selected_resume_context>{json.dumps(roles)}</selected_resume_context>\n\n"
+                f"<selected_resume_context>{json.dumps(context)}</selected_resume_context>\n\n"
                 f"<job_description>{job_description}</job_description>"
             ),
             schema=BulletRewriteResponse,
@@ -347,6 +374,16 @@ def _number_tokens(text: str) -> set[str]:
     return {token.lower().replace(",", "") for token in _NUMBER_TOKEN.findall(text)}
 
 
+def _resume_bullet_map(resume: ResumeDocument) -> dict[str, str]:
+    work_bullets = {
+        bullet.id: bullet.text for role in resume.work_experience for bullet in role.bullets
+    }
+    project_bullets = {
+        bullet.id: bullet.text for project in resume.projects for bullet in project.bullets
+    }
+    return work_bullets | project_bullets
+
+
 def validate_rewrite_response(
     resume: ResumeDocument,
     requested_ids: list[str],
@@ -354,9 +391,7 @@ def validate_rewrite_response(
 ) -> BulletRewriteResponse:
     """Reject ID mismatches, duplicates, and newly invented numeric facts."""
 
-    bullet_map = {
-        bullet.id: bullet.text for role in resume.work_experience for bullet in role.bullets
-    }
+    bullet_map = _resume_bullet_map(resume)
     if len(requested_ids) != len(set(requested_ids)):
         raise ValueError("Selected bullet IDs must be unique.")
     if any(bullet_id not in bullet_map for bullet_id in requested_ids):
@@ -406,6 +441,7 @@ async def ingest_resume(
     _require_consent(ai_processing_consent)
     max_upload_bytes = get_settings().max_upload_bytes
     data = await file.read(max_upload_bytes + 1)
+    filename = file.filename or "resume"
     await file.close()
     if len(data) > max_upload_bytes:
         _api_error(
@@ -414,27 +450,60 @@ async def ingest_resume(
             f"Resume uploads must be {max_upload_bytes / (1024 * 1024):g} MB or smaller.",
         )
     try:
-        extraction = extract_resume(
+        return await _ingest_resume_data(
             data,
-            file.filename or "resume",
+            filename,
+            allow_vision_fallback=allow_vision_fallback,
+            service=service,
             max_upload_bytes=max_upload_bytes,
         )
-    except DocumentTooLargeError as exc:
-        _api_error(413, "document_too_large", str(exc))
-    except UnsupportedFileTypeError as exc:
-        _api_error(415, "unsupported_file_type", str(exc))
-    except EncryptedDocumentError as exc:
-        _api_error(422, "encrypted_document", str(exc))
-    except (CorruptDocumentError, ResumeParsingError) as exc:
-        _api_error(422, "document_parse_failed", str(exc))
+    except IngestionError as exc:
+        _api_error(
+            exc.status_code,
+            exc.error.code,
+            exc.error.message,
+            retryable=exc.error.retryable,
+        )
 
-    if extraction.needs_vision_fallback:
-        if not allow_vision_fallback:
-            _api_error(
-                422,
-                "vision_consent_required",
-                "This PDF requires Gemini vision. Enable the vision fallback to continue.",
+
+async def _ingest_resume_data(
+    data: bytes,
+    filename: str,
+    *,
+    allow_vision_fallback: bool,
+    service: GeminiService,
+    max_upload_bytes: int,
+    on_progress: Callable[[IngestionProgressEvent], Awaitable[None]] | None = None,
+) -> ResumeIngestionResponse:
+    async def progress(stage: IngestionStage, sequence: int, message: str) -> None:
+        if on_progress is not None:
+            await on_progress(
+                IngestionProgressEvent(stage=stage, sequence=sequence, message=message)
             )
+
+    await progress(IngestionStage.PARSING, 1, "Parsing local document structure…")
+    try:
+        extraction = extract_resume(data, filename, max_upload_bytes=max_upload_bytes)
+    except DocumentTooLargeError as exc:
+        raise IngestionError(413, ApiError(code="document_too_large", message=str(exc))) from exc
+    except UnsupportedFileTypeError as exc:
+        raise IngestionError(415, ApiError(code="unsupported_file_type", message=str(exc))) from exc
+    except EncryptedDocumentError as exc:
+        raise IngestionError(422, ApiError(code="encrypted_document", message=str(exc))) from exc
+    except (CorruptDocumentError, ResumeParsingError) as exc:
+        raise IngestionError(422, ApiError(code="document_parse_failed", message=str(exc))) from exc
+
+    if extraction.needs_vision_fallback and not allow_vision_fallback:
+        raise IngestionError(
+            422,
+            ApiError(
+                code="vision_consent_required",
+                message="This PDF requires Gemini vision. Enable the vision fallback to continue.",
+            ),
+        )
+
+    await progress(IngestionStage.STRUCTURING, 2, "Structuring resume data with Gemini…")
+    if extraction.needs_vision_fallback:
         structured = await service.structure_resume_pdf(data)
         method = ExtractionMethod.GEMINI_VISION
     else:
@@ -444,10 +513,102 @@ async def ingest_resume(
             if extraction.file_type == "pdf"
             else ExtractionMethod.DOCX_TEXT
         )
+
+    await progress(IngestionStage.VALIDATING, 3, "Validating factual resume structure…")
     return ResumeIngestionResponse(
         resume=structured.to_resume_document(),
         extraction_method=method,
         warnings=list(extraction.warnings),
+    )
+
+
+@app.post(
+    "/api/v1/resumes/ingest/stream",
+    response_model=IngestionStreamEvent,
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "One IngestionStreamEvent per JSON Lines record.",
+            "content": {
+                "application/jsonl": {
+                    "schema": {
+                        "oneOf": [
+                            {"$ref": "#/components/schemas/IngestionProgressEvent"},
+                            {"$ref": "#/components/schemas/IngestionResultEvent"},
+                            {"$ref": "#/components/schemas/IngestionErrorEvent"},
+                        ]
+                    }
+                }
+            },
+        }
+    },
+)
+async def ingest_resume_stream(
+    file: Annotated[UploadFile, File()],
+    ai_processing_consent: Annotated[bool, Form()],
+    service: Annotated[GeminiService, Depends(get_gemini_service)],
+    allow_vision_fallback: Annotated[bool, Form()] = False,
+) -> StreamingResponse:
+    _require_consent(ai_processing_consent)
+    max_upload_bytes = get_settings().max_upload_bytes
+    data = await file.read(max_upload_bytes + 1)
+    filename = file.filename or "resume"
+    await file.close()
+    if len(data) > max_upload_bytes:
+        _api_error(
+            413,
+            "document_too_large",
+            f"Resume uploads must be {max_upload_bytes / (1024 * 1024):g} MB or smaller.",
+        )
+
+    async def events() -> AsyncIterator[str]:
+        queue: asyncio.Queue[IngestionProgressEvent] = asyncio.Queue()
+
+        async def on_progress(event: IngestionProgressEvent) -> None:
+            await queue.put(event)
+
+        task = asyncio.create_task(
+            _ingest_resume_data(
+                data,
+                filename,
+                allow_vision_fallback=allow_vision_fallback,
+                service=service,
+                max_upload_bytes=max_upload_bytes,
+                on_progress=on_progress,
+            )
+        )
+        try:
+            while not task.done() or not queue.empty():
+                if queue.empty():
+                    await asyncio.wait({task}, timeout=0.01)
+                    continue
+                yield (await queue.get()).model_dump_json() + "\n"
+            result = await task
+            yield IngestionResultEvent(data=result).model_dump_json() + "\n"
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+        except IngestionError as exc:
+            yield IngestionErrorEvent(error=exc.error).model_dump_json() + "\n"
+        except GeminiProviderError as exc:
+            yield (
+                IngestionErrorEvent(
+                    error=ApiError(
+                        code="gemini_provider_error",
+                        message=str(exc),
+                        retryable=exc.retryable,
+                    )
+                ).model_dump_json()
+                + "\n"
+            )
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        events(),
+        media_type="application/jsonl",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 
@@ -469,7 +630,7 @@ async def rewrite_bullets(
     bullet_ids = list(dict.fromkeys(request.bullet_ids))
     if len(bullet_ids) != len(request.bullet_ids):
         _api_error(422, "duplicate_bullet_ids", "Selected bullet IDs must be unique.")
-    available = {bullet.id for role in request.resume.work_experience for bullet in role.bullets}
+    available = set(_resume_bullet_map(request.resume))
     if any(bullet_id not in available for bullet_id in bullet_ids):
         _api_error(422, "unknown_bullet_id", "A selected bullet no longer exists.")
 

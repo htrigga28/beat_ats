@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -152,6 +153,24 @@ class ResumeIngestionResponse(StrictModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class IngestionStage(StrEnum):
+    PARSING = "parsing"
+    STRUCTURING = "structuring"
+    VALIDATING = "validating"
+
+
+class IngestionProgressEvent(StrictModel):
+    type: Literal["progress"] = "progress"
+    stage: IngestionStage
+    sequence: int = Field(ge=1, le=3)
+    message: str = Field(min_length=1, max_length=240)
+
+
+class IngestionResultEvent(StrictModel):
+    type: Literal["result"] = "result"
+    data: ResumeIngestionResponse
+
+
 class KeywordCategory(StrEnum):
     TECHNICAL_SKILL = "technical_skill"
     TOOL = "tool"
@@ -225,6 +244,14 @@ class ApiError(StrictModel):
     code: str
     message: str
     retryable: bool = False
+
+
+class IngestionErrorEvent(StrictModel):
+    type: Literal["error"] = "error"
+    error: ApiError
+
+
+IngestionStreamEvent = IngestionProgressEvent | IngestionResultEvent | IngestionErrorEvent
 
 
 class HealthResponse(StrictModel):
