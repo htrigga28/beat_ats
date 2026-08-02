@@ -1,6 +1,11 @@
 import createClient from "openapi-fetch";
 import type { paths } from "./api-types";
-import type { ApiErrorPayload, ResumeDocument } from "./types";
+import type {
+  ApiErrorPayload,
+  IngestionStreamEvent,
+  ResumeDocument,
+  ResumeIngestionResponse,
+} from "./types";
 
 const client = createClient<paths>({ baseUrl: "" });
 
@@ -47,6 +52,82 @@ export function ingestResume(formData: FormData, signal?: AbortSignal) {
     extraction_method: string;
     warnings: string[];
   }>(client.POST("/api/v1/resumes/ingest", { body: formData as never, signal }) as never);
+}
+
+interface IngestionCallbacks {
+  onUploadProgress: (progress: number) => void;
+  onEvent: (event: IngestionStreamEvent) => void;
+}
+
+export function ingestResumeStream(
+  formData: FormData,
+  callbacks: IngestionCallbacks,
+  signal?: AbortSignal,
+): Promise<ResumeIngestionResponse> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    let parsedOffset = 0;
+    let result: ResumeIngestionResponse | null = null;
+    let terminalError: import("./types").NormalizedError | null = null;
+
+    const parseAvailableLines = (final = false) => {
+      const available = request.responseText.slice(parsedOffset);
+      const lastNewline = available.lastIndexOf("\n");
+      const parseThrough = final ? available.length : lastNewline + 1;
+      if (parseThrough <= 0) return;
+      const chunk = available.slice(0, parseThrough);
+      parsedOffset += parseThrough;
+      for (const line of chunk.split("\n")) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as IngestionStreamEvent;
+        callbacks.onEvent(event);
+        if (event.type === "result") result = event.data;
+        if (event.type === "error") terminalError = normalizeError(event.error, requestResponse());
+      }
+    };
+
+    const requestResponse = () =>
+      new Response(null, {
+        status: request.status || 500,
+        headers: { "x-request-id": request.getResponseHeader("x-request-id") ?? "" },
+      });
+
+    request.open("POST", "/api/v1/resumes/ingest/stream");
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) callbacks.onUploadProgress((event.loaded / event.total) * 100);
+    });
+    request.addEventListener("progress", () => {
+      try {
+        parseAvailableLines();
+      } catch {
+        request.abort();
+        reject(normalizeError({ message: "The ingestion stream returned invalid data." }));
+      }
+    });
+    request.addEventListener("load", () => {
+      try {
+        if (request.status < 200 || request.status >= 300) {
+          const payload = request.responseText ? JSON.parse(request.responseText) : {};
+          reject(normalizeError(payload, requestResponse()));
+          return;
+        }
+        parseAvailableLines(true);
+        if (terminalError) reject(terminalError);
+        else if (result) resolve(result);
+        else reject(normalizeError({ message: "The ingestion stream ended before a result." }));
+      } catch {
+        reject(normalizeError({ message: "The ingestion stream returned invalid data." }));
+      }
+    });
+    request.addEventListener("error", () => {
+      reject(normalizeError({ message: "The private API is unavailable. Try again." }));
+    });
+    request.addEventListener("abort", () => {
+      reject(new DOMException("The request was cancelled.", "AbortError"));
+    });
+    signal?.addEventListener("abort", () => request.abort(), { once: true });
+    request.send(formData);
+  });
 }
 
 export function analyzeResume(

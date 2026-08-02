@@ -2,6 +2,7 @@ export interface ResumeBullet {
   id: string;
   text: string;
 }
+
 export interface WorkExperience {
   id: string;
   employer: string;
@@ -11,6 +12,7 @@ export interface WorkExperience {
   end_date?: string | null;
   bullets: ResumeBullet[];
 }
+
 export interface ContactInfo {
   full_name: string;
   email?: string | null;
@@ -18,10 +20,12 @@ export interface ContactInfo {
   location?: string | null;
   links: string[];
 }
+
 export interface SkillGroup {
   label?: string | null;
   items: string[];
 }
+
 export interface Education {
   institution: string;
   credential: string;
@@ -30,6 +34,7 @@ export interface Education {
   dates?: string | null;
   details: string[];
 }
+
 export interface Project {
   id: string;
   name: string;
@@ -38,10 +43,12 @@ export interface Project {
   link?: string | null;
   bullets: ResumeBullet[];
 }
+
 export interface AdditionalSection {
   title: string;
   items: string[];
 }
+
 export interface ResumeDocument {
   contact: ContactInfo;
   professional_summary?: string | null;
@@ -52,12 +59,14 @@ export interface ResumeDocument {
   projects: Project[];
   additional_sections: AdditionalSection[];
 }
+
 export interface RuntimeConfig {
   max_upload_bytes: number;
   accepted_extensions: string[];
   vision_fallback_available: boolean;
   gemini_model: string;
 }
+
 export interface GapAnalysis {
   match_score: number;
   keyword_gaps: { term: string; category: string; importance: string }[];
@@ -69,18 +78,43 @@ export interface GapAnalysis {
   };
   actionable_recommendations: string[];
 }
-export interface BulletRewriteResponse {
-  items: {
-    bullet_id: string;
-    original_text: string;
-    alternatives: { text: string; incorporated_keywords: string[] }[];
-  }[];
+
+export interface RewriteAlternative {
+  text: string;
+  incorporated_keywords: string[];
 }
+
+export interface BulletRewriteResult {
+  bullet_id: string;
+  original_text: string;
+  alternatives: RewriteAlternative[];
+}
+
+export interface BulletRewriteResponse {
+  items: BulletRewriteResult[];
+}
+
+export interface ResumeIngestionResponse {
+  resume: ResumeDocument;
+  extraction_method: string;
+  warnings: string[];
+}
+
 export interface ApiErrorPayload {
   code?: string;
   message?: string;
   retryable?: boolean;
 }
+
+export type IngestionStreamEvent =
+  | {
+      type: "progress";
+      stage: "parsing" | "structuring" | "validating";
+      sequence: number;
+      message: string;
+    }
+  | { type: "result"; data: ResumeIngestionResponse }
+  | { type: "error"; error: Required<ApiErrorPayload> };
 
 export type Step = 1 | 2 | 3 | 4;
 
@@ -91,6 +125,19 @@ export interface NormalizedError {
   requestId?: string;
 }
 
+export interface AppliedChange {
+  bulletId: string;
+  source: "ai";
+  before: string;
+  after: string;
+  appliedAt: number;
+}
+
+export interface TruthConfirmations {
+  factual: boolean;
+  advisory: boolean;
+}
+
 export interface WorkflowState {
   step: Step;
   config: RuntimeConfig | null;
@@ -98,12 +145,19 @@ export interface WorkflowState {
   originalResume: ResumeDocument | null;
   jobDescription: string;
   warnings: string[];
+  dismissedWarnings: string[];
   analysis: GapAnalysis | null;
   analysisStale: boolean;
   selectedBulletIds: string[];
-  rewrites: BulletRewriteResponse | null;
-  choices: Record<string, string>;
+  activeBulletId: string | null;
+  selectionLocked: boolean;
+  rewritesByBulletId: Record<string, BulletRewriteResult>;
+  openedSuggestionIds: string[];
+  appliedChanges: Record<string, AppliedChange>;
+  truthConfirmations: TruthConfirmations;
   docxBlob: Blob | null;
   error: NormalizedError | null;
   activeRequest: string | null;
+  uploadProgress: number;
+  ingestionPhase: Extract<IngestionStreamEvent, { type: "progress" }> | null;
 }

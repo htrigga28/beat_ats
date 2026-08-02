@@ -1,9 +1,64 @@
 import { describe, expect, it } from "vitest";
 import { initialState, reducer } from "./state";
+import type { GapAnalysis, ResumeDocument, WorkflowState } from "./types";
 
-describe("workflow reducer", () => {
-  it("selects the first rewrite without changing the source resume", () => {
-    const state = reducer(initialState, {
+const resume: ResumeDocument = {
+  contact: { full_name: "Jane Doe", links: [] },
+  professional_summary: null,
+  work_experience: [
+    {
+      id: "role-1",
+      employer: "Example",
+      title: "Engineer",
+      bullets: [{ id: "b1", text: "Built a thing" }],
+    },
+  ],
+  skills: [],
+  education: [],
+  certifications: [],
+  projects: [
+    {
+      id: "project-1",
+      name: "Toolkit",
+      bullets: [{ id: "p1", text: "Published a toolkit" }],
+    },
+  ],
+  additional_sections: [],
+};
+
+const analysis: GapAnalysis = {
+  match_score: 80,
+  keyword_gaps: [],
+  title_alignment: {
+    target_title: "Engineer",
+    assessment: "aligned",
+    rationale: "Aligned",
+    equivalent_title_suggestions: [],
+  },
+  actionable_recommendations: ["A", "B", "C"],
+};
+
+function ingestedState() {
+  return reducer(initialState, {
+    type: "ingested",
+    resume,
+    jobDescription: "A sufficiently long target job description for testing.",
+    warnings: ["Check columns"],
+  });
+}
+
+describe("session reducer", () => {
+  it("keeps extracted and current resumes as separate immutable snapshots", () => {
+    const state = ingestedState();
+    expect(state.step).toBe(2);
+    expect(state.originalResume).toEqual(state.resume);
+    expect(state.originalResume).not.toBe(state.resume);
+    expect(state.resume).not.toBe(resume);
+  });
+
+  it("stores proposals without choosing or applying one", () => {
+    const source = reducer(ingestedState(), { type: "selected", ids: ["b1"] });
+    const state = reducer(source, {
       type: "rewritesLoaded",
       rewrites: {
         items: [
@@ -18,20 +73,117 @@ describe("workflow reducer", () => {
         ],
       },
     });
-    expect(state.choices.b1).toBe("Built a better thing");
-    expect(state.resume).toBeNull();
+    expect(state.resume).toEqual(source.resume);
+    expect(state.appliedChanges).toEqual({});
+    expect(state.rewritesByBulletId.b1.alternatives).toHaveLength(2);
+    expect(state.selectionLocked).toBe(true);
   });
 
-  it("leaves an empty choice when a rewrite has no alternatives", () => {
-    const state = reducer(initialState, {
-      type: "rewritesLoaded",
-      rewrites: { items: [{ bullet_id: "b2", original_text: "Source", alternatives: [] }] },
+  it("caps selection, locks it after generation, and records opened suggestions", () => {
+    let state = ingestedState();
+    state = reducer(state, {
+      type: "selected",
+      ids: Array.from({ length: 12 }, (_, index) => `b${index}`),
     });
-    expect(state.choices.b2).toBe("");
+    expect(state.selectedBulletIds).toHaveLength(10);
+    state = reducer(state, { type: "rewritesLoaded", rewrites: { items: [] } });
+    const locked = reducer(state, { type: "selected", ids: ["different"] });
+    expect(locked.selectedBulletIds).toEqual(state.selectedBulletIds);
+    state = reducer(state, { type: "suggestionsOpened", id: "b1" });
+    state = reducer(state, { type: "suggestionsOpened", id: "b1" });
+    expect(state.openedSuggestionIds).toEqual(["b1"]);
+    expect(state.activeBulletId).toBe("b1");
   });
 
-  it("clears private session data while retaining deployment config", () => {
-    const configured = reducer(initialState, {
+  it("preserves an active selected bullet and unlocks a generated selection", () => {
+    let state = reducer(ingestedState(), { type: "selected", ids: ["b1", "p1"] });
+    state = reducer(state, { type: "activeBullet", id: "p1" });
+    state = reducer(state, { type: "selected", ids: ["p1"] });
+    expect(state.activeBulletId).toBe("p1");
+    state = reducer(state, { type: "rewritesLoaded", rewrites: { items: [] } });
+    state = reducer(state, { type: "selectionUnlocked" });
+    expect(state.selectionLocked).toBe(false);
+    expect(state.rewritesByBulletId).toEqual({});
+  });
+
+  it("invalidates analysis-derived and export state after manual resume edits", () => {
+    let state = reducer(ingestedState(), { type: "analysisLoaded", analysis });
+    state = {
+      ...state,
+      selectedBulletIds: ["b1"],
+      selectionLocked: true,
+      rewritesByBulletId: {
+        b1: { bullet_id: "b1", original_text: "Built a thing", alternatives: [] },
+      },
+      truthConfirmations: { factual: true, advisory: true },
+      docxBlob: new Blob(["docx"]),
+    };
+    const edited = structuredClone(resume);
+    edited.contact.full_name = "Jane Q. Doe";
+    state = reducer(state, { type: "resumeUpdated", resume: edited });
+    expect(state.analysisStale).toBe(true);
+    expect(state.rewritesByBulletId).toEqual({});
+    expect(state.selectedBulletIds).toEqual([]);
+    expect(state.truthConfirmations).toEqual({ factual: false, advisory: false });
+    expect(state.docxBlob).toBeNull();
+  });
+
+  it("applies only an explicit suggestion while retaining generated proposals", () => {
+    const source = reducer(ingestedState(), { type: "analysisLoaded", analysis });
+    const edited = structuredClone(resume);
+    edited.work_experience[0].bullets[0].text = "Built a better thing";
+    const state = reducer(
+      {
+        ...source,
+        selectedBulletIds: ["b1"],
+        selectionLocked: true,
+        rewritesByBulletId: {
+          b1: { bullet_id: "b1", original_text: "Built a thing", alternatives: [] },
+        },
+        truthConfirmations: { factual: true, advisory: true },
+      },
+      {
+        type: "suggestionApplied",
+        resume: edited,
+        change: {
+          bulletId: "b1",
+          source: "ai",
+          before: "Built a thing",
+          after: "Built a better thing",
+          appliedAt: 1,
+        },
+      },
+    );
+    expect(state.resume?.work_experience[0].bullets[0].text).toBe("Built a better thing");
+    expect(state.originalResume?.work_experience[0].bullets[0].text).toBe("Built a thing");
+    expect(state.rewritesByBulletId.b1).toBeDefined();
+    expect(state.truthConfirmations).toEqual({ factual: false, advisory: false });
+  });
+
+  it("restores an applied bullet without mutating the immutable extraction", () => {
+    const edited = structuredClone(resume);
+    edited.work_experience[0].bullets[0].text = "Built a better thing";
+    let state: WorkflowState = {
+      ...ingestedState(),
+      resume: edited,
+      appliedChanges: {
+        b1: {
+          bulletId: "b1",
+          source: "ai" as const,
+          before: "Built a thing",
+          after: "Built a better thing",
+          appliedAt: 1,
+        },
+      },
+    };
+    state = reducer(state, { type: "bulletRestored", resume, bulletId: "b1" });
+    expect(state.appliedChanges).toEqual({});
+    expect(state.resume?.work_experience[0].bullets[0].text).toBe("Built a thing");
+    expect(state.originalResume?.work_experience[0].bullets[0].text).toBe("Built a thing");
+  });
+
+  it("dismisses warnings and clears private state while retaining deployment config", () => {
+    const configured = reducer(ingestedState(), {
       type: "configLoaded",
       config: {
         max_upload_bytes: 10,
@@ -40,73 +192,62 @@ describe("workflow reducer", () => {
         gemini_model: "gemini-3.1-flash-lite",
       },
     });
-    const cleared = reducer({ ...configured, jobDescription: "private" }, { type: "clear" });
+    const dismissed = reducer(configured, {
+      type: "warningDismissed",
+      warning: "Check columns",
+    });
+    expect(dismissed.dismissedWarnings).toEqual(["Check columns"]);
+    const duplicate = reducer(dismissed, {
+      type: "warningDismissed",
+      warning: "Check columns",
+    });
+    expect(duplicate).toBe(dismissed);
+    const cleared = reducer(duplicate, { type: "clear" });
     expect(cleared.jobDescription).toBe("");
+    expect(cleared.resume).toBeNull();
     expect(cleared.config?.max_upload_bytes).toBe(10);
   });
 
-  it("handles request, resume, analysis, selection, apply, and download transitions", () => {
-    const resume = {
-      contact: { full_name: "Jane Doe", links: [] },
-      professional_summary: null,
-      work_experience: [
-        {
-          id: "role-1",
-          employer: "Example",
-          title: "Engineer",
-          bullets: [{ id: "b1", text: "Built a thing" }],
-        },
-      ],
-      skills: [],
-      education: [],
-      certifications: [],
-      projects: [],
-      additional_sections: [],
-    };
-    const analysis = {
-      match_score: 80,
-      keyword_gaps: [],
-      title_alignment: {
-        target_title: "Engineer",
-        assessment: "aligned",
-        rationale: "Aligned",
-        equivalent_title_suggestions: [],
-      },
-      actionable_recommendations: ["A", "B", "C"],
-    };
+  it("tracks bounded upload progress and normalized request errors", () => {
     let state = reducer(initialState, { type: "requestStarted", label: "Working" });
-    expect(state.activeRequest).toBe("Working");
-    state = reducer(state, { type: "requestFinished" });
+    state = reducer(state, { type: "uploadProgress", progress: 140 });
+    expect(state.uploadProgress).toBe(100);
     state = reducer(state, {
-      type: "ingested",
-      resume,
-      jobDescription: "A long job description",
-      warnings: ["Check this"],
-    });
-    expect(state.originalResume).not.toBe(state.resume);
-    state = reducer(state, { type: "resumeSaved", resume, stale: true });
-    state = reducer(state, { type: "analysisLoaded", analysis });
-    state = reducer(state, { type: "selected", ids: ["b1"] });
-    state = reducer(state, { type: "choice", id: "b1", text: "Built a better thing" });
-    state = reducer(state, {
-      type: "rewritesApplied",
-      resume: {
-        ...resume,
-        work_experience: [
-          { ...resume.work_experience[0], bullets: [{ id: "b1", text: "Built a better thing" }] },
-        ],
-      },
-    });
-    state = reducer(state, { type: "docxLoaded", blob: new Blob(["docx"]) });
-    state = reducer(state, { type: "step", step: 3 });
-    expect(state.step).toBe(3);
-  });
-
-  it("stores a normalized error", () => {
-    const state = reducer(initialState, {
       type: "error",
       error: { code: "failed", message: "Try again", retryable: true },
     });
+    expect(state.activeRequest).toBeNull();
     expect(state.error?.retryable).toBe(true);
+  });
+
+  it("tracks request phases, confirmations, exports, and explicit navigation", () => {
+    let state = reducer(initialState, { type: "uploadProgress", progress: -20 });
+    expect(state.uploadProgress).toBe(0);
+    state = reducer(state, {
+      type: "ingestionProgress",
+      event: {
+        type: "progress",
+        stage: "parsing",
+        sequence: 1,
+        message: "Parsing",
+      },
+    });
+    expect(state.ingestionPhase?.stage).toBe("parsing");
+    state = reducer(state, { type: "requestStarted", label: "Working" });
+    state = reducer(state, { type: "requestFinished" });
+    expect(state.activeRequest).toBeNull();
+    state = reducer(state, {
+      type: "error",
+      error: { code: "failed", message: "No", retryable: false },
+    });
+    state = reducer(state, { type: "errorCleared" });
+    expect(state.error).toBeNull();
+    state = reducer(state, { type: "truthConfirmation", key: "factual", checked: true });
+    expect(state.truthConfirmations.factual).toBe(true);
+    const blob = new Blob(["docx"]);
+    state = reducer(state, { type: "docxLoaded", blob });
+    expect(state.docxBlob).toBe(blob);
+    state = reducer(state, { type: "step", step: 4 });
+    expect(state.step).toBe(4);
   });
 });

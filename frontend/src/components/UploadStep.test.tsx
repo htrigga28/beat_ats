@@ -50,6 +50,47 @@ describe("UploadStep", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Only PDF and DOCX");
   });
 
+  it("reports the deployment size limit for an accepted file type", async () => {
+    const user = userEvent.setup();
+    render(
+      <UploadStep
+        config={{
+          max_upload_bytes: 4,
+          accepted_extensions: ["pdf"],
+          vision_fallback_available: false,
+          gemini_model: "gemini-3.1-flash-lite",
+        }}
+        busy={false}
+        onUpload={vi.fn()}
+      />,
+    );
+    await user.upload(screen.getByLabelText("Resume file"), new File(["12345"], "resume.pdf"));
+    await user.click(screen.getByRole("button", { name: "Extract resume" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("larger than the deployment limit");
+    expect(screen.getByLabelText(/Allow inline Gemini vision/)).toBeDisabled();
+  });
+
+  it("requires a complete description and explicit consent", async () => {
+    const user = userEvent.setup();
+    render(
+      <UploadStep
+        config={{
+          max_upload_bytes: 1024,
+          accepted_extensions: ["pdf"],
+          vision_fallback_available: true,
+          gemini_model: "gemini-3.1-flash-lite",
+        }}
+        busy={false}
+        onUpload={vi.fn()}
+      />,
+    );
+    await user.upload(screen.getByLabelText("Resume file"), new File(["pdf"], "resume.pdf"));
+    await user.type(screen.getByLabelText("Target job description"), "Too short");
+    await user.click(screen.getByRole("button", { name: "Extract resume" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("at least 50 characters");
+    expect(screen.getByRole("alert")).toHaveTextContent("Consent is required");
+  });
+
   it("submits a valid PDF only after the consent gate is checked", async () => {
     const user = userEvent.setup();
     const onUpload = vi.fn();

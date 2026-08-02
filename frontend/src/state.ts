@@ -1,11 +1,17 @@
 import type {
+  AppliedChange,
   BulletRewriteResponse,
+  GapAnalysis,
+  IngestionStreamEvent,
   NormalizedError,
   ResumeDocument,
   RuntimeConfig,
   Step,
+  TruthConfirmations,
   WorkflowState,
 } from "./types";
+
+const unchecked: TruthConfirmations = { factual: false, advisory: false };
 
 export const initialState: WorkflowState = {
   step: 1,
@@ -14,31 +20,62 @@ export const initialState: WorkflowState = {
   originalResume: null,
   jobDescription: "",
   warnings: [],
+  dismissedWarnings: [],
   analysis: null,
   analysisStale: false,
   selectedBulletIds: [],
-  rewrites: null,
-  choices: {},
+  activeBulletId: null,
+  selectionLocked: false,
+  rewritesByBulletId: {},
+  openedSuggestionIds: [],
+  appliedChanges: {},
+  truthConfirmations: unchecked,
   docxBlob: null,
   error: null,
   activeRequest: null,
+  uploadProgress: 0,
+  ingestionPhase: null,
 };
 
-type Action =
+export type Action =
   | { type: "configLoaded"; config: RuntimeConfig }
   | { type: "requestStarted"; label: string }
   | { type: "requestFinished" }
+  | { type: "uploadProgress"; progress: number }
+  | { type: "ingestionProgress"; event: Extract<IngestionStreamEvent, { type: "progress" }> }
   | { type: "error"; error: NormalizedError }
+  | { type: "errorCleared" }
   | { type: "ingested"; resume: ResumeDocument; jobDescription: string; warnings: string[] }
-  | { type: "resumeSaved"; resume: ResumeDocument; stale: boolean }
-  | { type: "analysisLoaded"; analysis: WorkflowState["analysis"] }
+  | { type: "resumeUpdated"; resume: ResumeDocument }
+  | { type: "analysisLoaded"; analysis: GapAnalysis }
+  | { type: "warningDismissed"; warning: string }
   | { type: "selected"; ids: string[] }
+  | { type: "activeBullet"; id: string | null }
   | { type: "rewritesLoaded"; rewrites: BulletRewriteResponse }
-  | { type: "choice"; id: string; text: string }
-  | { type: "rewritesApplied"; resume: ResumeDocument }
+  | { type: "selectionUnlocked" }
+  | { type: "suggestionsOpened"; id: string }
+  | { type: "suggestionApplied"; resume: ResumeDocument; change: AppliedChange }
+  | { type: "bulletRestored"; resume: ResumeDocument; bulletId: string }
+  | { type: "truthConfirmation"; key: keyof TruthConfirmations; checked: boolean }
   | { type: "docxLoaded"; blob: Blob }
   | { type: "step"; step: Step }
   | { type: "clear" };
+
+function invalidateResumeDependents(state: WorkflowState, resume: ResumeDocument): WorkflowState {
+  return {
+    ...state,
+    resume,
+    analysisStale: state.analysis !== null,
+    selectedBulletIds: [],
+    activeBulletId: null,
+    selectionLocked: false,
+    rewritesByBulletId: {},
+    openedSuggestionIds: [],
+    truthConfirmations: unchecked,
+    docxBlob: null,
+    error: null,
+  };
+}
 
 export function reducer(state: WorkflowState, action: Action): WorkflowState {
   switch (action.type) {
@@ -48,57 +85,103 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
       return { ...state, activeRequest: action.label, error: null };
     case "requestFinished":
       return { ...state, activeRequest: null };
+    case "uploadProgress":
+      return { ...state, uploadProgress: Math.max(0, Math.min(100, action.progress)) };
+    case "ingestionProgress":
+      return { ...state, ingestionPhase: action.event };
     case "error":
       return { ...state, activeRequest: null, error: action.error };
+    case "errorCleared":
+      return { ...state, error: null };
     case "ingested":
       return {
-        ...state,
+        ...initialState,
+        config: state.config,
         step: 2,
-        resume: action.resume,
+        resume: structuredClone(action.resume),
         originalResume: structuredClone(action.resume),
         jobDescription: action.jobDescription,
         warnings: action.warnings,
-        analysis: null,
-        analysisStale: false,
-        rewrites: null,
-        choices: {},
-        docxBlob: null,
-        error: null,
       };
-    case "resumeSaved":
+    case "resumeUpdated":
+      return invalidateResumeDependents(state, structuredClone(action.resume));
+    case "analysisLoaded":
       return {
         ...state,
-        resume: action.resume,
-        analysisStale: action.stale,
-        rewrites: null,
-        choices: {},
-        docxBlob: null,
+        step: 3,
+        analysis: action.analysis,
+        analysisStale: false,
         error: null,
       };
-    case "analysisLoaded":
-      return { ...state, analysis: action.analysis, analysisStale: false, error: null };
+    case "warningDismissed":
+      return state.dismissedWarnings.includes(action.warning)
+        ? state
+        : { ...state, dismissedWarnings: [...state.dismissedWarnings, action.warning] };
     case "selected":
-      return { ...state, selectedBulletIds: action.ids };
+      return state.selectionLocked
+        ? state
+        : {
+            ...state,
+            selectedBulletIds: action.ids.slice(0, 10),
+            activeBulletId: action.ids.includes(state.activeBulletId ?? "")
+              ? state.activeBulletId
+              : (action.ids[0] ?? null),
+          };
+    case "activeBullet":
+      return { ...state, activeBulletId: action.id };
     case "rewritesLoaded":
       return {
         ...state,
-        rewrites: action.rewrites,
-        choices: Object.fromEntries(
-          action.rewrites.items.map((item) => [item.bullet_id, item.alternatives[0]?.text ?? ""]),
+        selectionLocked: true,
+        rewritesByBulletId: Object.fromEntries(
+          action.rewrites.items.map((item) => [item.bullet_id, item]),
         ),
+        activeBulletId: state.activeBulletId ?? state.selectedBulletIds[0] ?? null,
+        openedSuggestionIds: [],
         error: null,
       };
-    case "choice":
-      return { ...state, choices: { ...state.choices, [action.id]: action.text } };
-    case "rewritesApplied":
+    case "selectionUnlocked":
       return {
         ...state,
-        step: 4,
-        resume: action.resume,
-        analysisStale: true,
-        rewrites: null,
-        choices: {},
+        selectionLocked: false,
+        rewritesByBulletId: {},
+        openedSuggestionIds: [],
+        activeBulletId: state.selectedBulletIds[0] ?? null,
+      };
+    case "suggestionsOpened":
+      return state.openedSuggestionIds.includes(action.id)
+        ? { ...state, activeBulletId: action.id }
+        : {
+            ...state,
+            activeBulletId: action.id,
+            openedSuggestionIds: [...state.openedSuggestionIds, action.id],
+          };
+    case "suggestionApplied":
+      return {
+        ...state,
+        resume: structuredClone(action.resume),
+        analysisStale: state.analysis !== null,
+        appliedChanges: { ...state.appliedChanges, [action.change.bulletId]: action.change },
+        truthConfirmations: unchecked,
         docxBlob: null,
+        error: null,
+      };
+    case "bulletRestored": {
+      const appliedChanges = { ...state.appliedChanges };
+      delete appliedChanges[action.bulletId];
+      return {
+        ...state,
+        resume: structuredClone(action.resume),
+        analysisStale: state.analysis !== null,
+        appliedChanges,
+        truthConfirmations: unchecked,
+        docxBlob: null,
+      };
+    }
+    case "truthConfirmation":
+      return {
+        ...state,
+        truthConfirmations: { ...state.truthConfirmations, [action.key]: action.checked },
       };
     case "docxLoaded":
       return { ...state, docxBlob: action.blob, error: null };

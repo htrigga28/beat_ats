@@ -1,168 +1,33 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import {
-  analyzeResume,
-  generateDocx,
-  getConfig,
-  ingestResume,
-  normalizeError,
-  rewriteBullets,
-} from "./api";
-import { initialState, reducer } from "./state";
-import type { NormalizedError, ResumeDocument, Step } from "./types";
+import { useEffect, useRef } from "react";
 import { ExportStep } from "./components/ExportStep";
 import { ReviewStep } from "./components/ReviewStep";
 import { TailorStep } from "./components/TailorStep";
 import { UploadStep } from "./components/UploadStep";
+import { rewritesAsResponse, SessionProvider, useSession } from "./SessionContext";
+import type { Step } from "./types";
 
 const labels = ["Upload", "Review", "Tailor", "Export"] as const;
 
-export function App() {
-  const [state, dispatch] = useReducer(reducer, initialState);
-  const requestRef = useRef<{ id: number; controller: AbortController } | null>(null);
-  const nextRequestId = useRef(0);
+function Application() {
+  const {
+    state,
+    retry,
+    downloadUrl,
+    uploadResume,
+    saveResume,
+    requestRewrites,
+    applyChoices,
+    reanalyze,
+    createDocx,
+    clearSession,
+    setStep,
+  } = useSession();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const retryRef = useRef<(() => void) | null>(null);
-
-  const run = useCallback(
-    async <T,>(label: string, task: (signal: AbortSignal) => Promise<T>, retry?: () => void) => {
-      requestRef.current?.controller.abort();
-      const controller = new AbortController();
-      const id = ++nextRequestId.current;
-      requestRef.current = { id, controller };
-      retryRef.current = retry ?? null;
-      dispatch({ type: "requestStarted", label });
-      try {
-        return await task(controller.signal);
-      } catch (error) {
-        if (controller.signal.aborted) return undefined;
-        const normalized =
-          error && typeof error === "object" && "code" in error
-            ? (error as NormalizedError)
-            : normalizeError(error);
-        dispatch({ type: "error", error: normalized });
-        return undefined;
-      } finally {
-        if (requestRef.current?.id === id) {
-          requestRef.current = null;
-          dispatch({ type: "requestFinished" });
-        }
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    void run("Loading deployment settings", (signal) =>
-      getConfig(signal).then((config) => {
-        dispatch({ type: "configLoaded", config });
-        return config;
-      }),
-    );
-    return () => requestRef.current?.controller.abort();
-  }, [run]);
+  const rewrites = rewritesAsResponse(state);
 
   useEffect(() => {
     headingRef.current?.focus();
   }, [state.step]);
-
-  const clearSession = () => {
-    requestRef.current?.controller.abort();
-    dispatch({ type: "clear" });
-  };
-
-  const onUpload = (
-    file: File,
-    jobDescription: string,
-    consent: boolean,
-    visionConsent: boolean,
-  ) => {
-    const body = new FormData();
-    body.append("file", file);
-    body.append("ai_processing_consent", String(consent));
-    body.append("allow_vision_fallback", String(visionConsent));
-    void run(
-      "Extracting resume",
-      (signal) =>
-        ingestResume(body, signal).then((result) => {
-          dispatch({
-            type: "ingested",
-            resume: result.resume,
-            jobDescription: jobDescription.trim(),
-            warnings: result.warnings ?? [],
-          });
-          return result;
-        }),
-      () => onUpload(file, jobDescription, consent, visionConsent),
-    );
-  };
-
-  const saveResume = (resume: ResumeDocument, shouldAnalyze: boolean) => {
-    const changed = JSON.stringify(resume) !== JSON.stringify(state.resume);
-    if (!shouldAnalyze) {
-      dispatch({ type: "resumeSaved", resume, stale: changed && state.analysis !== null });
-      return;
-    }
-    dispatch({ type: "resumeSaved", resume, stale: false });
-    void run(
-      "Comparing resume evidence",
-      (signal) =>
-        analyzeResume(resume, state.jobDescription, true, signal).then((analysis) => {
-          dispatch({ type: "analysisLoaded", analysis });
-          return analysis;
-        }),
-      () => saveResume(resume, true),
-    );
-  };
-
-  const requestRewrites = (ids: string[]) => {
-    dispatch({ type: "selected", ids });
-    void run(
-      "Drafting alternatives",
-      (signal) =>
-        rewriteBullets(state.resume!, state.jobDescription, ids, true, signal).then((rewrites) => {
-          dispatch({ type: "rewritesLoaded", rewrites });
-          return rewrites;
-        }),
-      () => requestRewrites(ids),
-    );
-  };
-
-  const applyRewrites = (choices: Record<string, string>) => {
-    if (!state.resume) return;
-    const resume = structuredClone(state.resume);
-    for (const role of resume.work_experience ?? [])
-      for (const bullet of role.bullets ?? [])
-        if (choices[bullet.id]) bullet.text = choices[bullet.id].trim();
-    dispatch({ type: "rewritesApplied", resume });
-  };
-
-  const reanalyze = () => {
-    if (state.resume) saveResume(state.resume, true);
-  };
-
-  const downloadUrl = useMemo(
-    () => (state.docxBlob ? URL.createObjectURL(state.docxBlob) : null),
-    [state.docxBlob],
-  );
-  useEffect(
-    () => () => {
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-    },
-    [downloadUrl],
-  );
-
-  const createDocx = () => {
-    if (state.resume)
-      void run(
-        "Building Word document",
-        (signal) =>
-          generateDocx(state.resume!, signal).then((blob) => {
-            dispatch({ type: "docxLoaded", blob });
-            return blob;
-          }),
-        () => createDocx(),
-      );
-  };
 
   return (
     <div className="app-shell">
@@ -223,12 +88,8 @@ export function App() {
             </strong>
             <span>{state.error.message}</span>
             {state.error.requestId && <small>Request ID: {state.error.requestId}</small>}
-            {state.error.retryable && retryRef.current && (
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => retryRef.current?.()}
-              >
+            {state.error.retryable && retry && (
+              <button className="button button-secondary" type="button" onClick={retry}>
                 Retry
               </button>
             )}
@@ -238,32 +99,34 @@ export function App() {
           <UploadStep
             config={state.config}
             busy={Boolean(state.activeRequest)}
-            onUpload={onUpload}
+            onUpload={uploadResume}
           />
         )}
         {state.step === 2 && state.resume && (
           <ReviewStep
             resume={state.resume}
-            warnings={state.warnings}
+            warnings={state.warnings.filter(
+              (warning) => !state.dismissedWarnings.includes(warning),
+            )}
             analysis={state.analysis}
             analysisStale={state.analysisStale}
             busy={Boolean(state.activeRequest)}
             onSave={saveResume}
-            onContinue={() => dispatch({ type: "step", step: 3 })}
+            onContinue={() => setStep(3)}
           />
         )}
         {state.step === 3 && state.resume && (
           <TailorStep
             resume={state.resume}
-            rewrites={state.rewrites}
+            rewrites={rewrites}
             selectedIds={state.selectedBulletIds}
-            choices={state.choices}
+            choices={{}}
             busy={Boolean(state.activeRequest)}
             onRequest={requestRewrites}
-            onChoice={(id, text) => dispatch({ type: "choice", id, text })}
-            onApply={applyRewrites}
-            onBack={() => dispatch({ type: "step", step: 2 })}
-            onContinue={() => dispatch({ type: "step", step: 4 })}
+            onChoice={() => undefined}
+            onApply={applyChoices}
+            onBack={() => setStep(2)}
+            onContinue={() => setStep(4)}
           />
         )}
         {state.step === 4 && state.resume && state.originalResume && (
@@ -275,7 +138,7 @@ export function App() {
             downloadUrl={downloadUrl}
             onGenerate={createDocx}
             onReanalyze={reanalyze}
-            onBack={() => dispatch({ type: "step", step: 3 })}
+            onBack={() => setStep(3)}
           />
         )}
       </main>
@@ -286,5 +149,13 @@ export function App() {
         <a href="/docs">API documentation</a>
       </footer>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <SessionProvider>
+      <Application />
+    </SessionProvider>
   );
 }
