@@ -6,6 +6,8 @@ __pycache__/
 .ruff_cache/
 .qa/
 .work/
+.impeccable/
+.streamlit/
 .coverage
 htmlcov/
 .vercel/
@@ -15,3 +17,8 @@ htmlcov/
 !.github/
 .vercel
 .env*
+/public/
+frontend/node_modules/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/

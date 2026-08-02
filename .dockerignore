@@ -2,6 +2,10 @@
 .env
 .venv
 .qa
+.work
+.impeccable
+.streamlit
+.vercel
 __pycache__
 .pytest_cache
 .mypy_cache
@@ -11,4 +15,6 @@ tests
 *.pdf
 *.docx
 *.pyc
-
+frontend/node_modules
+frontend/coverage
+public

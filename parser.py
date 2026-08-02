@@ -19,7 +19,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 from pdfminer.pdfdocument import PDFPasswordIncorrect
 
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 20
 MAX_DOCX_EXPANDED_BYTES = 50 * 1024 * 1024
 MIN_LOCAL_PDF_CHARACTERS = 100
@@ -112,16 +112,27 @@ def _read_bytes(source: bytes | bytearray | BytesIO) -> bytes:
     return source.getvalue()
 
 
-def _enforce_upload_size(data: bytes) -> None:
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise DocumentTooLargeError("Resume uploads must be 10 MB or smaller.")
+def _format_megabytes(max_upload_bytes: int) -> str:
+    megabytes = max_upload_bytes / (1024 * 1024)
+    return f"{megabytes:g} MB"
 
 
-def extract_pdf_text(source: bytes | bytearray | BytesIO) -> ExtractionResult:
+def _enforce_upload_size(data: bytes, max_upload_bytes: int) -> None:
+    if len(data) > max_upload_bytes:
+        raise DocumentTooLargeError(
+            f"Resume uploads must be {_format_megabytes(max_upload_bytes)} or smaller."
+        )
+
+
+def extract_pdf_text(
+    source: bytes | bytearray | BytesIO,
+    *,
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+) -> ExtractionResult:
     """Extract text from a text-based PDF and flag likely scans for Gemini vision."""
 
     data = _read_bytes(source)
-    _enforce_upload_size(data)
+    _enforce_upload_size(data, max_upload_bytes)
     if not data.startswith(b"%PDF-"):
         raise UnsupportedFileTypeError("The uploaded file is not a valid PDF.")
 
@@ -208,11 +219,15 @@ def _paragraph_text(paragraph: Paragraph) -> str:
     return text
 
 
-def extract_docx_text(source: bytes | bytearray | BytesIO) -> ExtractionResult:
+def extract_docx_text(
+    source: bytes | bytearray | BytesIO,
+    *,
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+) -> ExtractionResult:
     """Extract paragraphs and table cells from a DOCX in document order."""
 
     data = _read_bytes(source)
-    _enforce_upload_size(data)
+    _enforce_upload_size(data, max_upload_bytes)
     _validate_docx_archive(data)
     try:
         document = Document(BytesIO(data))
@@ -238,13 +253,18 @@ def extract_docx_text(source: bytes | bytearray | BytesIO) -> ExtractionResult:
     return ExtractionResult(text=text, file_type="docx", warnings=warnings)
 
 
-def extract_resume(data: bytes, filename: str) -> ExtractionResult:
+def extract_resume(
+    data: bytes,
+    filename: str,
+    *,
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+) -> ExtractionResult:
     """Dispatch to the correct parser after checking extension and file signature."""
 
-    _enforce_upload_size(data)
+    _enforce_upload_size(data, max_upload_bytes)
     extension = Path(filename).suffix.lower()
     if extension == ".pdf":
-        return extract_pdf_text(data)
+        return extract_pdf_text(data, max_upload_bytes=max_upload_bytes)
     if extension == ".docx":
-        return extract_docx_text(data)
+        return extract_docx_text(data, max_upload_bytes=max_upload_bytes)
     raise UnsupportedFileTypeError("Only PDF and DOCX resume files are supported.")
