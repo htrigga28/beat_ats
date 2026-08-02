@@ -8,6 +8,7 @@ __pycache__/
 .work/
 .coverage
 htmlcov/
+.vercel/
 *.py[cod]
 *.docx
 *.pdf
