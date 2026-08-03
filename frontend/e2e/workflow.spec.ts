@@ -11,10 +11,16 @@ test("completes the controlled desktop workflow and downloads DOCX", async ({ pa
   await expect(page.getByText("2 / 10")).toBeVisible();
   await page.getByRole("button", { name: "Generate suggestions" }).click();
 
-  await expect(page.getByText("Original wording")).toBeVisible();
-  await expect(page.locator("mark", { hasText: "accessible" })).toBeVisible();
+  const desktopStudio = page.locator(".tailor-desktop");
+  await expect(desktopStudio.getByText("Original wording")).toBeVisible();
+  await expect(page.getByText("1 / 2")).toBeVisible();
+  await expect(page.locator(".tailor-desktop").getByText("Review required")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Proceed to final export" })).toBeDisabled();
+  await expect(desktopStudio.locator("mark", { hasText: "accessible" })).toBeVisible();
   await expect(
-    page.getByLabel("Suggested keywords not present verbatim").getByText("WCAG", { exact: true }),
+    desktopStudio
+      .getByLabel("Suggested keywords not present verbatim")
+      .getByText("WCAG", { exact: true }),
   ).toBeVisible();
   await page
     .locator(".proposal-card")
@@ -23,12 +29,13 @@ test("completes the controlled desktop workflow and downloads DOCX", async ({ pa
     .click();
   await expect(page.locator(".tailor-desktop").getByText("Applied wording")).toBeVisible();
 
-  await page.getByRole("button", { name: "Published reusable components for 6 products" }).click();
+  await page.getByRole("button", { name: "Review next bullet" }).click();
   await expect(
     page
       .locator(".tailor-desktop .suggestion-pane")
       .getByText("Published reusable components for 6 products", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("2 / 2")).toBeVisible();
   await page.getByRole("button", { name: "Proceed to final export" }).click();
 
   await expect(page.getByRole("heading", { name: "Verify the final document" })).toBeVisible();

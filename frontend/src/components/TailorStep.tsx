@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Circle,
   FileSearch,
   Lightbulb,
   LockKeyhole,
@@ -64,13 +65,18 @@ export function TailorStep({
   onContinue,
 }: Props) {
   const [glowingBullet, setGlowingBullet] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState("resume");
   const rewriteCount = Object.keys(rewritesByBulletId).length;
+  const reviewedCount = selectedIds.filter((id) => openedSuggestionIds.includes(id)).length;
+  const nextUnreviewedId = selectedIds.find((id) => !openedSuggestionIds.includes(id)) ?? null;
   const allReviewed =
-    selectedIds.length === 0 ||
-    (rewriteCount > 0 && selectedIds.every((id) => openedSuggestionIds.includes(id)));
+    selectedIds.length === 0 || (rewriteCount > 0 && reviewedCount === selectedIds.length);
 
   useEffect(() => {
-    if (activeBulletId && rewritesByBulletId[activeBulletId]) onOpen(activeBulletId);
+    if (activeBulletId && rewritesByBulletId[activeBulletId]) {
+      onOpen(activeBulletId);
+      setMobileTab("suggestions");
+    }
   }, [activeBulletId, onOpen, rewritesByBulletId]);
 
   const toggle = (id: string) => {
@@ -85,18 +91,24 @@ export function TailorStep({
     window.setTimeout(() => setGlowingBullet(null), 1000);
   };
 
+  const openBullet = (id: string) => {
+    onOpen(id);
+    setMobileTab("suggestions");
+  };
+
   const resumePane = (
     <ResumeSelectionPane
       resume={resume}
       selectedIds={selectedIds}
       activeBulletId={activeBulletId}
       selectionLocked={selectionLocked}
+      openedSuggestionIds={openedSuggestionIds}
       rewrites={rewritesByBulletId}
       appliedChanges={appliedChanges}
       glowingBullet={glowingBullet}
       busy={busy}
       onToggle={toggle}
-      onOpen={onOpen}
+      onOpen={openBullet}
       onRestore={onRestore}
     />
   );
@@ -127,10 +139,21 @@ export function TailorStep({
       </details>
 
       <div className="tailor-toolbar">
-        <div className="selection-pill" aria-live="polite">
-          <span>Selected</span>
-          <strong>{selectedIds.length} / 10</strong>
-          <span>bullets</span>
+        <div className="tailor-progress" aria-live="polite">
+          <div className="selection-pill">
+            <span>Selected</span>
+            <strong>{selectedIds.length} / 10</strong>
+            <span>bullets</span>
+          </div>
+          {selectionLocked && selectedIds.length > 0 && (
+            <div className={`review-progress ${allReviewed ? "is-complete" : ""}`}>
+              {allReviewed ? <Check aria-hidden="true" /> : <Circle aria-hidden="true" />}
+              <span>Reviewed</span>
+              <strong>
+                {reviewedCount} / {selectedIds.length}
+              </strong>
+            </div>
+          )}
         </div>
         <div>
           {selectionLocked ? (
@@ -159,7 +182,7 @@ export function TailorStep({
         </section>
       </div>
 
-      <Tabs defaultValue="resume" className="tailor-mobile">
+      <Tabs value={mobileTab} onValueChange={setMobileTab} className="tailor-mobile">
         <TabsList aria-label="Tailoring workspace">
           <TabsTrigger value="resume">Resume</TabsTrigger>
           <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
@@ -178,9 +201,22 @@ export function TailorStep({
         </Button>
         <div>
           {selectedIds.length > 0 && !allReviewed && (
-            <span className="footer-assurance">
-              Open each selected bullet’s suggestion panel before export.
-            </span>
+            <div className="review-guidance">
+              <span className="footer-assurance">
+                {reviewedCount} of {selectedIds.length} reviewed. Open every selected suggestion
+                before export.
+              </span>
+              {nextUnreviewedId && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => openBullet(nextUnreviewedId)}
+                >
+                  Review next bullet
+                </Button>
+              )}
+            </div>
           )}
           <Button type="button" size="lg" disabled={!allReviewed || busy} onClick={onContinue}>
             {selectedIds.length === 0 ? "Continue without tailoring" : "Proceed to final export"}
@@ -240,6 +276,7 @@ function ResumeSelectionPane({
   selectedIds,
   activeBulletId,
   selectionLocked,
+  openedSuggestionIds,
   rewrites,
   appliedChanges,
   glowingBullet,
@@ -252,6 +289,7 @@ function ResumeSelectionPane({
   selectedIds: string[];
   activeBulletId: string | null;
   selectionLocked: boolean;
+  openedSuggestionIds: string[];
   rewrites: Record<string, BulletRewriteResult>;
   appliedChanges: Record<string, AppliedChange>;
   glowingBullet: string | null;
@@ -305,6 +343,7 @@ function ResumeSelectionPane({
               {group.bullets.map((bullet) => {
                 const selected = selectedIds.includes(bullet.id);
                 const active = activeBulletId === bullet.id;
+                const reviewed = openedSuggestionIds.includes(bullet.id);
                 const disabled = busy || selectionLocked || (!selected && selectedIds.length >= 10);
                 return (
                   <article
@@ -324,14 +363,30 @@ function ResumeSelectionPane({
                     >
                       {bullet.text}
                     </button>
-                    {appliedChanges[bullet.id] && (
-                      <div className="applied-bullet-row">
-                        <span>
-                          <Check aria-hidden="true" /> Applied wording
-                        </span>
-                        <Button variant="link" size="sm" onClick={() => onRestore(bullet.id)}>
-                          Restore original
-                        </Button>
+                    {((selectionLocked && selected) || appliedChanges[bullet.id]) && (
+                      <div className="bullet-status-row">
+                        {selectionLocked && selected && (
+                          <span
+                            className={`review-state ${reviewed ? "is-reviewed" : "is-pending"}`}
+                          >
+                            {reviewed ? (
+                              <Check aria-hidden="true" />
+                            ) : (
+                              <Circle aria-hidden="true" />
+                            )}
+                            {reviewed ? "Reviewed" : "Review required"}
+                          </span>
+                        )}
+                        {appliedChanges[bullet.id] && (
+                          <span className="applied-state">
+                            <Check aria-hidden="true" /> Applied wording
+                          </span>
+                        )}
+                        {appliedChanges[bullet.id] && (
+                          <Button variant="link" size="sm" onClick={() => onRestore(bullet.id)}>
+                            Restore original
+                          </Button>
+                        )}
                       </div>
                     )}
                   </article>

@@ -51,7 +51,7 @@ function Application() {
     <div className="application-shell">
       <header className="application-header">
         <a className="brand-lockup" href="/" aria-label="Beat ATS home">
-          <span className="brand-mark">B</span>
+          <img className="brand-mark" src="/beat-ats-logo.png" alt="" width="44" height="44" />
           <span>
             <strong>Beat ATS</strong>
             <small>Evidence-led resume tailoring</small>
@@ -97,11 +97,12 @@ function Application() {
               <li
                 className={`${complete ? "is-complete" : ""} ${current ? "is-current" : ""}`}
                 key={label}
+                aria-current={current ? "step" : undefined}
               >
                 <span className="step-marker" aria-hidden="true">
                   {complete ? <Check /> : step}
                 </span>
-                <span>
+                <span className="step-label">
                   <small>Stage {step}</small>
                   <strong>{label}</strong>
                 </span>
