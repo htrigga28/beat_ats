@@ -228,6 +228,10 @@ class GeminiService:
                     retryable=True,
                     status_code=429,
                 ) from exc
+            if code == 408:
+                raise GeminiProviderError(
+                    "Gemini is temporarily unavailable.", retryable=True, status_code=503
+                ) from exc
             raise GeminiProviderError("Gemini rejected the request.") from exc
         except (errors.ServerError, TimeoutError) as exc:
             raise GeminiProviderError(
@@ -319,9 +323,10 @@ class GeminiService:
             f"<selected_resume_context>{json.dumps(context)}</selected_resume_context>\n\n"
             f"<job_description>{job_description}</job_description>"
         )
-        for validation_attempt in range(2):
+        repair_needed = False
+        for call_index in range(2):
             system_prompt = REWRITE_SYSTEM_PROMPT
-            if validation_attempt:
+            if repair_needed:
                 system_prompt = f"{REWRITE_SYSTEM_PROMPT}\n\n{REWRITE_REPAIR_PROMPT}"
             try:
                 response = await self._generate(
@@ -333,18 +338,24 @@ class GeminiService:
                 )
                 return validate_rewrite_response(resume, bullet_ids, response)
             except (GeminiResponseValidationError, ValueError) as exc:
+                repair_needed = True
                 LOGGER.warning(
                     "gemini_response_rejected schema=BulletRewriteResponse "
                     "validation_attempt=%s reason=%s",
-                    validation_attempt + 1,
+                    call_index + 1,
                     "schema" if isinstance(exc, GeminiResponseValidationError) else "safety",
                 )
-                if validation_attempt:
+                if call_index:
                     raise GeminiProviderError(
                         "Gemini could not produce fact-safe rewrite alternatives. Retry or select "
                         "fewer bullets.",
                         retryable=True,
                     ) from exc
+            except GeminiProviderError as exc:
+                if call_index == 0 and exc.retryable and exc.status_code == 503:
+                    LOGGER.warning("gemini_rewrite_transient_retry call=%s", call_index + 1)
+                    continue
+                raise
 
         raise AssertionError("Rewrite validation attempts were exhausted.")
 

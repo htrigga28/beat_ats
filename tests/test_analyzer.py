@@ -722,7 +722,7 @@ async def test_rewrite_surfaces_retryable_error_after_repair_is_rejected() -> No
 
 
 @pytest.mark.asyncio
-async def test_rewrite_does_not_multiply_network_retries() -> None:
+async def test_rewrite_uses_its_second_call_for_a_transient_retry() -> None:
     resume = _extracted_resume().to_resume_document()
     bullet = resume.work_experience[0].bullets[0]
     safe = _rewrite_response(
@@ -735,7 +735,27 @@ async def test_rewrite_does_not_multiply_network_retries() -> None:
     )
     service, models = _sequenced_gemini_service([TimeoutError(), safe])
 
-    with pytest.raises(GeminiProviderError, match="temporarily unavailable"):
+    result = await service.rewrite(resume, "Senior frontend engineer " * 10, [bullet.id])
+
+    assert result == safe
+    assert len(models.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_rewrite_shares_two_call_budget_between_network_and_repair() -> None:
+    resume = _extracted_resume().to_resume_document()
+    bullet = resume.work_experience[0].bullets[0]
+    unsafe = _rewrite_response(
+        bullet.id,
+        bullet.text,
+        [
+            ("Built React interfaces used by 99 teams", ["React"]),
+            ("Delivered React interfaces used by 20 teams", ["React"]),
+        ],
+    )
+    service, models = _sequenced_gemini_service([TimeoutError(), unsafe])
+
+    with pytest.raises(GeminiProviderError, match="fact-safe"):
         await service.rewrite(resume, "Senior frontend engineer " * 10, [bullet.id])
 
-    assert len(models.calls) == 1
+    assert len(models.calls) == 2
