@@ -4,7 +4,8 @@ from io import BytesIO
 from zipfile import ZipFile
 
 from docx import Document
-from docx.shared import Inches
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
 
 from generator import generate_resume_docx
 from schemas import ResumeDocument
@@ -66,8 +67,8 @@ def test_generator_creates_parseable_single_column_document() -> None:
     assert "EDUCATION" in text
     assert len(document.sections) == 1
     assert len(document.tables) == 0
-    assert document.sections[0].top_margin == Inches(0.75)
-    assert document.sections[0].left_margin == Inches(0.75)
+    assert abs(document.sections[0].top_margin - Inches(0.72)) < 200
+    assert abs(document.sections[0].left_margin - Inches(0.72)) < 200
     assert document.sections[0].header.paragraphs[0].text == ""
     assert document.sections[0].footer.paragraphs[0].text == ""
 
@@ -97,3 +98,37 @@ def test_generator_omits_empty_optional_sections_and_internal_ids() -> None:
     assert "WORK EXPERIENCE" not in text
     assert "SKILLS" not in text
     assert resume.contact.full_name in text
+
+
+def test_generator_matches_preview_typography_and_entry_structure() -> None:
+    document = Document(BytesIO(generate_resume_docx(sample_resume())))
+
+    name = document.paragraphs[0]
+    assert name.text == "Jane Doe"
+    assert name.runs[0].font.size == Pt(18)
+    assert name.runs[0].font.color.rgb == RGBColor(15, 23, 42)
+    assert name.runs[0].font.all_caps is True
+
+    contact = document.paragraphs[1]
+    assert contact.text == "jane@example.com | +1 555 0100 | Remote"
+    assert contact.runs[0].font.size == Pt(8.5)
+
+    section_heading = next(
+        paragraph for paragraph in document.paragraphs if paragraph.text == "WORK EXPERIENCE"
+    )
+    borders = section_heading._p.pPr.find(qn("w:pBdr"))
+    assert borders is not None
+    assert borders.find(qn("w:bottom")).get(qn("w:color")) == "94A3B8"
+
+    role_heading = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.text.startswith("Frontend Engineer")
+    )
+    assert role_heading.text == "Frontend Engineer\tExample Labs"
+    assert all(run.bold for run in role_heading.runs)
+
+    normal = document.styles["Normal"]
+    assert normal.font.name == "Arial"
+    assert normal.font.size == Pt(9.5)
+    assert normal.font.color.rgb == RGBColor(51, 65, 85)
