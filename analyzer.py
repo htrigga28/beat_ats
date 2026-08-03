@@ -83,12 +83,24 @@ must be a natural action-oriented bullet of at most 40 words, not a keyword list
 exact bullet_id and original_text. Return only the supplied response schema.
 """.strip()
 
+REWRITE_REPAIR_PROMPT = """
+The previous response was rejected by the factual-integrity validator. Regenerate the
+entire response from the supplied source data. Return exactly one item for every
+requested bullet ID, copy each bullet_id and original_text exactly, and provide two or
+three distinct alternatives of at most 40 words. Do not add, remove, or reformat any
+numeric token from its source bullet. Do not introduce facts from another bullet.
+""".strip()
+
 
 class GeminiProviderError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = False, status_code: int = 502) -> None:
         super().__init__(message)
         self.retryable = retryable
         self.status_code = status_code
+
+
+class GeminiResponseValidationError(GeminiProviderError):
+    """Gemini returned data that could not cross the validated response boundary."""
 
 
 class IngestionError(RuntimeError):
@@ -167,7 +179,15 @@ class GeminiService:
         if close:
             close()
 
-    async def _generate(self, *, contents: object, schema: type[T], system_prompt: str) -> T:
+    async def _generate(
+        self,
+        *,
+        contents: object,
+        schema: type[T],
+        system_prompt: str,
+        provider_attempts: int | None = None,
+        timeout_seconds: float | None = None,
+    ) -> T:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             response_mime_type="application/json",
@@ -178,9 +198,11 @@ class GeminiService:
             # is still validated again below before it crosses our boundary.
             response_json_schema=_gemini_json_schema(schema.model_json_schema()),
         )
+        attempt_limit = provider_attempts or self._settings.gemini_max_attempts
+        request_timeout = timeout_seconds or self._settings.gemini_timeout_seconds
         try:
             async for attempt in AsyncRetrying(
-                stop=stop_after_attempt(self._settings.gemini_max_attempts),
+                stop=stop_after_attempt(attempt_limit),
                 wait=wait_exponential_jitter(initial=0.5, max=4),
                 retry=retry_if_exception(_is_transient),
                 reraise=True,
@@ -192,7 +214,7 @@ class GeminiService:
                             contents=contents,
                             config=config,
                         ),
-                        timeout=self._settings.gemini_timeout_seconds,
+                        timeout=request_timeout,
                     )
         except errors.ClientError as exc:
             code = getattr(exc, "code", None)
@@ -205,6 +227,10 @@ class GeminiService:
                     "to reset, then try again.",
                     retryable=True,
                     status_code=429,
+                ) from exc
+            if code == 408:
+                raise GeminiProviderError(
+                    "Gemini is temporarily unavailable.", retryable=True, status_code=503
                 ) from exc
             raise GeminiProviderError("Gemini rejected the request.") from exc
         except (errors.ServerError, TimeoutError) as exc:
@@ -222,7 +248,9 @@ class GeminiService:
                 return schema.model_validate(parsed)
             return schema.model_validate_json(response.text)
         except (ValidationError, TypeError, ValueError) as exc:
-            raise GeminiProviderError("Gemini returned an invalid structured response.") from exc
+            raise GeminiResponseValidationError(
+                "Gemini returned an invalid structured response."
+            ) from exc
 
     async def structure_resume_text(self, text: str) -> ExtractedResumeDocument:
         return await self._generate(
@@ -290,14 +318,46 @@ class GeminiService:
                     }
                 )
         context = {"work_experience": roles, "projects": projects}
-        return await self._generate(
-            contents=(
-                f"<selected_resume_context>{json.dumps(context)}</selected_resume_context>\n\n"
-                f"<job_description>{job_description}</job_description>"
-            ),
-            schema=BulletRewriteResponse,
-            system_prompt=REWRITE_SYSTEM_PROMPT,
+
+        contents = (
+            f"<selected_resume_context>{json.dumps(context)}</selected_resume_context>\n\n"
+            f"<job_description>{job_description}</job_description>"
         )
+        repair_needed = False
+        for call_index in range(2):
+            system_prompt = REWRITE_SYSTEM_PROMPT
+            if repair_needed:
+                system_prompt = f"{REWRITE_SYSTEM_PROMPT}\n\n{REWRITE_REPAIR_PROMPT}"
+            try:
+                response = await self._generate(
+                    contents=contents,
+                    schema=BulletRewriteResponse,
+                    system_prompt=system_prompt,
+                    provider_attempts=1,
+                    timeout_seconds=min(self._settings.gemini_timeout_seconds, 55.0),
+                )
+                return validate_rewrite_response(resume, bullet_ids, response)
+            except (GeminiResponseValidationError, ValueError) as exc:
+                repair_needed = True
+                LOGGER.warning(
+                    "gemini_response_rejected schema=BulletRewriteResponse "
+                    "validation_attempt=%s reason=%s",
+                    call_index + 1,
+                    "schema" if isinstance(exc, GeminiResponseValidationError) else "safety",
+                )
+                if call_index:
+                    raise GeminiProviderError(
+                        "Gemini could not produce fact-safe rewrite alternatives. Retry or select "
+                        "fewer bullets.",
+                        retryable=True,
+                    ) from exc
+            except GeminiProviderError as exc:
+                if call_index == 0 and exc.retryable and exc.status_code == 503:
+                    LOGGER.warning("gemini_rewrite_transient_retry call=%s", call_index + 1)
+                    continue
+                raise
+
+        raise AssertionError("Rewrite validation attempts were exhausted.")
 
 
 @asynccontextmanager
