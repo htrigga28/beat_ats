@@ -8,24 +8,37 @@ from docx import Document
 from docx.document import Document as DocumentObject
 from docx.enum.section import WD_SECTION
 from docx.enum.style import WD_STYLE_TYPE
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
+from docx.text.paragraph import Paragraph
 from docx.text.run import Run
 
 from schemas import ResumeDocument
 
-BLACK = RGBColor(0, 0, 0)
+INK = RGBColor(15, 23, 42)
+BODY = RGBColor(51, 65, 85)
+MUTED = RGBColor(71, 85, 105)
+RULE = "94A3B8"
 FONT_NAME = "Arial"
+CONTENT_WIDTH_INCHES = 7.06
 
 
-def _set_run_font(run: Run, size: float, *, bold: bool = False) -> None:
+def _set_run_font(
+    run: Run,
+    size: float,
+    *,
+    bold: bool = False,
+    color: RGBColor = BODY,
+    all_caps: bool = False,
+) -> None:
     font = run.font
     font.name = FONT_NAME
     font.size = Pt(size)
     font.bold = bold
-    font.color.rgb = BLACK
+    font.color.rgb = color
+    font.all_caps = all_caps
     properties = run._element.get_or_add_rPr()
     fonts = properties.get_or_add_rFonts()
     fonts.set(qn("w:ascii"), FONT_NAME)
@@ -35,13 +48,13 @@ def _set_run_font(run: Run, size: float, *, bold: bool = False) -> None:
 def _configure_styles(document: DocumentObject) -> None:
     normal = document.styles["Normal"]
     normal.font.name = FONT_NAME
-    normal.font.size = Pt(10.5)
-    normal.font.color.rgb = BLACK
+    normal.font.size = Pt(9.5)
+    normal.font.color.rgb = BODY
     normal._element.rPr.rFonts.set(qn("w:ascii"), FONT_NAME)
     normal._element.rPr.rFonts.set(qn("w:hAnsi"), FONT_NAME)
     normal.paragraph_format.space_before = Pt(0)
-    normal.paragraph_format.space_after = Pt(2)
-    normal.paragraph_format.line_spacing = 1.0
+    normal.paragraph_format.space_after = Pt(2.5)
+    normal.paragraph_format.line_spacing = 1.15
 
     styles = document.styles
     if "Resume Section" not in styles:
@@ -49,14 +62,36 @@ def _configure_styles(document: DocumentObject) -> None:
     else:
         style = styles["Resume Section"]
     style.font.name = FONT_NAME
-    style.font.size = Pt(11)
+    style.font.size = Pt(10.5)
     style.font.bold = True
-    style.font.color.rgb = BLACK
+    style.font.color.rgb = INK
     style._element.rPr.rFonts.set(qn("w:ascii"), FONT_NAME)
     style._element.rPr.rFonts.set(qn("w:hAnsi"), FONT_NAME)
-    style.paragraph_format.space_before = Pt(8)
-    style.paragraph_format.space_after = Pt(3)
+    style.paragraph_format.space_before = Pt(11)
+    style.paragraph_format.space_after = Pt(5)
     style.paragraph_format.keep_with_next = True
+
+
+def _set_paragraph_bottom_border(
+    paragraph: Paragraph,
+    *,
+    color: str,
+    size: int,
+    space: int,
+) -> None:
+    properties = paragraph._p.get_or_add_pPr()
+    borders = properties.find(qn("w:pBdr"))
+    if borders is None:
+        borders = OxmlElement("w:pBdr")
+        properties.append(borders)
+    bottom = borders.find(qn("w:bottom"))
+    if bottom is None:
+        bottom = OxmlElement("w:bottom")
+        borders.append(bottom)
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), str(size))
+    bottom.set(qn("w:space"), str(space))
+    bottom.set(qn("w:color"), color)
 
 
 def _add_numbering(document: DocumentObject) -> int:
@@ -111,7 +146,7 @@ def _add_numbering(document: DocumentObject) -> int:
     fonts.set(qn("w:hAnsi"), FONT_NAME)
     run_properties.append(fonts)
     color = OxmlElement("w:color")
-    color.set(qn("w:val"), "000000")
+    color.set(qn("w:val"), "334155")
     run_properties.append(color)
     level.append(run_properties)
     abstract.append(level)
@@ -128,14 +163,15 @@ def _add_numbering(document: DocumentObject) -> int:
 
 def _add_section_heading(document: DocumentObject, title: str) -> None:
     paragraph = document.add_paragraph(style="Resume Section")
-    paragraph.add_run(title.upper())
+    _set_run_font(paragraph.add_run(title.upper()), 10.5, bold=True, color=INK)
+    _set_paragraph_bottom_border(paragraph, color=RULE, size=6, space=3)
 
 
 def _add_bullet(document: DocumentObject, text: str, num_id: int) -> None:
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(0)
-    paragraph.paragraph_format.space_after = Pt(1.5)
-    paragraph.paragraph_format.line_spacing = 1.0
+    paragraph.paragraph_format.space_after = Pt(2)
+    paragraph.paragraph_format.line_spacing = 1.15
     properties = paragraph._p.get_or_add_pPr()
     number_properties = OxmlElement("w:numPr")
     level = OxmlElement("w:ilvl")
@@ -146,16 +182,72 @@ def _add_bullet(document: DocumentObject, text: str, num_id: int) -> None:
     number_properties.append(number)
     properties.append(number_properties)
     run = paragraph.add_run(text)
-    _set_run_font(run, 10.5)
+    _set_run_font(run, 9.5)
 
 
 def _add_labeled_line(document: DocumentObject, label: str, value: str) -> None:
     paragraph = document.add_paragraph()
-    paragraph.paragraph_format.space_after = Pt(1)
+    paragraph.paragraph_format.space_after = Pt(2)
     label_run = paragraph.add_run(f"{label}: ")
-    _set_run_font(label_run, 10.5, bold=True)
+    _set_run_font(label_run, 9.5, bold=True, color=INK)
     value_run = paragraph.add_run(value)
-    _set_run_font(value_run, 10.5)
+    _set_run_font(value_run, 9.5)
+
+
+def _add_entry_heading(document: DocumentObject, primary: str, secondary: str | None) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(5)
+    paragraph.paragraph_format.space_after = Pt(1)
+    paragraph.paragraph_format.keep_with_next = True
+    _set_run_font(paragraph.add_run(primary), 9.5, bold=True, color=INK)
+    if secondary:
+        paragraph.paragraph_format.tab_stops.add_tab_stop(
+            Inches(CONTENT_WIDTH_INCHES),
+            WD_TAB_ALIGNMENT.RIGHT,
+            WD_TAB_LEADER.SPACES,
+        )
+        _set_run_font(paragraph.add_run(f"\t{secondary}"), 9.5, bold=True, color=INK)
+
+
+def _add_metadata(document: DocumentObject, value: str) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(3)
+    paragraph.paragraph_format.keep_with_next = True
+    _set_run_font(paragraph.add_run(value), 8.5, color=MUTED)
+
+
+def _pack_contact_links(links: list[str], *, max_chars: int = 92) -> list[str]:
+    lines: list[str] = []
+    current: list[str] = []
+    current_length = 0
+    for link in links:
+        added_length = len(link) + (3 if current else 0)
+        if current and current_length + added_length > max_chars:
+            lines.append(" | ".join(current))
+            current = [link]
+            current_length = len(link)
+        else:
+            current.append(link)
+            current_length += added_length
+    if current:
+        lines.append(" | ".join(current))
+    return lines
+
+
+def _add_contact_line(
+    document: DocumentObject,
+    value: str,
+    *,
+    after: float,
+    add_rule: bool = False,
+) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.space_after = Pt(after)
+    paragraph.paragraph_format.line_spacing = 1.05
+    _set_run_font(paragraph.add_run(value), 8.5, color=MUTED)
+    if add_rule:
+        _set_paragraph_bottom_border(paragraph, color="334155", size=12, space=7)
 
 
 def generate_resume_docx(resume: ResumeDocument) -> bytes:
@@ -166,10 +258,10 @@ def generate_resume_docx(resume: ResumeDocument) -> bytes:
     section.start_type = WD_SECTION.NEW_PAGE
     section.page_width = Inches(8.5)
     section.page_height = Inches(11)
-    section.top_margin = Inches(0.75)
-    section.right_margin = Inches(0.75)
-    section.bottom_margin = Inches(0.75)
-    section.left_margin = Inches(0.75)
+    section.top_margin = Inches(0.72)
+    section.right_margin = Inches(0.72)
+    section.bottom_margin = Inches(0.72)
+    section.left_margin = Inches(0.72)
     section.header_distance = Inches(0.3)
     section.footer_distance = Inches(0.3)
     _configure_styles(document)
@@ -184,52 +276,60 @@ def generate_resume_docx(resume: ResumeDocument) -> bytes:
 
     name = document.add_paragraph()
     name.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    name.paragraph_format.space_after = Pt(1)
-    _set_run_font(name.add_run(resume.contact.full_name), 16, bold=True)
+    name.paragraph_format.space_after = Pt(3)
+    _set_run_font(
+        name.add_run(resume.contact.full_name),
+        18,
+        bold=True,
+        color=INK,
+        all_caps=True,
+    )
 
-    contact_parts = [
+    primary_contact_parts = [
         part
         for part in [
-            resume.contact.location,
-            resume.contact.phone,
             resume.contact.email,
-            *resume.contact.links,
+            resume.contact.phone,
+            resume.contact.location,
         ]
         if part
     ]
-    if contact_parts:
-        contact = document.add_paragraph()
-        contact.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        contact.paragraph_format.space_after = Pt(5)
-        _set_run_font(contact.add_run(" | ".join(contact_parts)), 9.5)
+    contact_lines = []
+    if primary_contact_parts:
+        contact_lines.append(" | ".join(primary_contact_parts))
+    contact_lines.extend(_pack_contact_links(resume.contact.links))
+    for index, contact_line in enumerate(contact_lines):
+        is_last = index == len(contact_lines) - 1
+        _add_contact_line(
+            document,
+            contact_line,
+            after=9 if is_last else 1,
+            add_rule=is_last,
+        )
+    if not contact_lines:
+        _set_paragraph_bottom_border(name, color="334155", size=12, space=7)
+        name.paragraph_format.space_after = Pt(9)
 
     if resume.professional_summary:
         _add_section_heading(document, "Professional Summary")
         paragraph = document.add_paragraph(resume.professional_summary)
-        paragraph.paragraph_format.space_after = Pt(2)
+        paragraph.paragraph_format.space_after = Pt(4)
 
     if resume.work_experience:
         _add_section_heading(document, "Work Experience")
         for role in resume.work_experience:
-            heading = document.add_paragraph()
-            heading.paragraph_format.space_before = Pt(2)
-            heading.paragraph_format.space_after = Pt(0)
-            heading.paragraph_format.keep_with_next = True
-            _set_run_font(heading.add_run(role.title), 10.5, bold=True)
-            _set_run_font(heading.add_run(f" | {role.employer}"), 10.5, bold=True)
+            _add_entry_heading(document, role.title, role.employer)
 
             metadata = " | ".join(
                 part
                 for part in [
-                    " - ".join(part for part in [role.start_date, role.end_date] if part),
                     role.location,
+                    " - ".join(part for part in [role.start_date, role.end_date] if part),
                 ]
                 if part
             )
             if metadata:
-                paragraph = document.add_paragraph(metadata)
-                paragraph.paragraph_format.space_after = Pt(1)
-                _set_run_font(paragraph.runs[0], 9.5)
+                _add_metadata(document, metadata)
             for bullet in role.bullets:
                 _add_bullet(document, bullet.text, bullet_num_id)
 
@@ -241,20 +341,18 @@ def generate_resume_docx(resume: ResumeDocument) -> bytes:
                 _add_labeled_line(document, group.label, value)
             elif value:
                 paragraph = document.add_paragraph(value)
-                paragraph.paragraph_format.space_after = Pt(1)
+                paragraph.paragraph_format.space_after = Pt(2)
 
     if resume.education:
         _add_section_heading(document, "Education")
         for education in resume.education:
-            heading = document.add_paragraph()
-            heading.paragraph_format.space_after = Pt(0)
-            _set_run_font(heading.add_run(education.credential), 10.5, bold=True)
+            credential = education.credential
             if education.field_of_study:
-                _set_run_font(heading.add_run(f", {education.field_of_study}"), 10.5)
-            institution_parts = [education.institution, education.location, education.dates]
-            institution_line = " | ".join(part for part in institution_parts if part)
-            paragraph = document.add_paragraph(institution_line)
-            paragraph.paragraph_format.space_after = Pt(1)
+                credential = f"{credential}, {education.field_of_study}"
+            _add_entry_heading(document, credential, education.institution)
+            metadata = " | ".join(part for part in [education.location, education.dates] if part)
+            if metadata:
+                _add_metadata(document, metadata)
             for detail in education.details:
                 _add_bullet(document, detail, bullet_num_id)
 
@@ -266,15 +364,10 @@ def generate_resume_docx(resume: ResumeDocument) -> bytes:
     if resume.projects:
         _add_section_heading(document, "Projects")
         for project in resume.projects:
-            heading = document.add_paragraph()
-            heading.paragraph_format.space_after = Pt(0)
-            _set_run_font(heading.add_run(project.name), 10.5, bold=True)
-            metadata = " | ".join(
-                part for part in [project.role, project.dates, project.link] if part
-            )
+            _add_entry_heading(document, project.name, project.role)
+            metadata = " | ".join(part for part in [project.dates, project.link] if part)
             if metadata:
-                paragraph = document.add_paragraph(metadata)
-                paragraph.paragraph_format.space_after = Pt(1)
+                _add_metadata(document, metadata)
             for bullet in project.bullets:
                 _add_bullet(document, bullet.text, bullet_num_id)
 
