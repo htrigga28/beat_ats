@@ -179,7 +179,15 @@ class GeminiService:
         if close:
             close()
 
-    async def _generate(self, *, contents: object, schema: type[T], system_prompt: str) -> T:
+    async def _generate(
+        self,
+        *,
+        contents: object,
+        schema: type[T],
+        system_prompt: str,
+        provider_attempts: int | None = None,
+        timeout_seconds: float | None = None,
+    ) -> T:
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             response_mime_type="application/json",
@@ -190,9 +198,11 @@ class GeminiService:
             # is still validated again below before it crosses our boundary.
             response_json_schema=_gemini_json_schema(schema.model_json_schema()),
         )
+        attempt_limit = provider_attempts or self._settings.gemini_max_attempts
+        request_timeout = timeout_seconds or self._settings.gemini_timeout_seconds
         try:
             async for attempt in AsyncRetrying(
-                stop=stop_after_attempt(self._settings.gemini_max_attempts),
+                stop=stop_after_attempt(attempt_limit),
                 wait=wait_exponential_jitter(initial=0.5, max=4),
                 retry=retry_if_exception(_is_transient),
                 reraise=True,
@@ -204,7 +214,7 @@ class GeminiService:
                             contents=contents,
                             config=config,
                         ),
-                        timeout=self._settings.gemini_timeout_seconds,
+                        timeout=request_timeout,
                     )
         except errors.ClientError as exc:
             code = getattr(exc, "code", None)
@@ -318,6 +328,8 @@ class GeminiService:
                     contents=contents,
                     schema=BulletRewriteResponse,
                     system_prompt=system_prompt,
+                    provider_attempts=1,
+                    timeout_seconds=min(self._settings.gemini_timeout_seconds, 55.0),
                 )
                 return validate_rewrite_response(resume, bullet_ids, response)
             except (GeminiResponseValidationError, ValueError) as exc:

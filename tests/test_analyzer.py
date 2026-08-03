@@ -529,10 +529,13 @@ class _SequenceModels:
 
     async def generate_content(self, **kwargs: object) -> object:
         self.calls.append(kwargs)
+        parsed = next(self.parsed_responses)
+        if isinstance(parsed, BaseException):
+            raise parsed
         return type(
             "FakeResponse",
             (),
-            {"parsed": next(self.parsed_responses), "text": ""},
+            {"parsed": parsed, "text": ""},
         )()
 
 
@@ -716,3 +719,23 @@ async def test_rewrite_surfaces_retryable_error_after_repair_is_rejected() -> No
 
     assert exc_info.value.retryable is True
     assert len(models.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_rewrite_does_not_multiply_network_retries() -> None:
+    resume = _extracted_resume().to_resume_document()
+    bullet = resume.work_experience[0].bullets[0]
+    safe = _rewrite_response(
+        bullet.id,
+        bullet.text,
+        [
+            ("Built accessible React interfaces used by 10 teams", ["accessible"]),
+            ("Delivered React interfaces used by 10 teams", ["React"]),
+        ],
+    )
+    service, models = _sequenced_gemini_service([TimeoutError(), safe])
+
+    with pytest.raises(GeminiProviderError, match="temporarily unavailable"):
+        await service.rewrite(resume, "Senior frontend engineer " * 10, [bullet.id])
+
+    assert len(models.calls) == 1
