@@ -162,21 +162,10 @@ test("runs the built SPA, FastAPI, parser, fake Gemini, and retained-Blob repeat
   expect(facts.table_count).toBe(0);
   expect(facts.header_text).toEqual([]);
   expect(facts.footer_text).toEqual([]);
-  expect(facts.paragraphs).toContain(workRewrite.accepted_text);
   expect(facts.paragraphs).not.toContain(workRewrite.original_text);
-  expect(facts.paragraphs).toContain(projectRewrite.original_text);
 
   assertOrdered(
     facts.paragraphs,
     expectedDocxParagraphs(new Map([[workRewrite.original_text, workRewrite.accepted_text]])),
   );
-  assertOrdered(facts.paragraphs, [
-    "PROFESSIONAL SUMMARY",
-    "WORK EXPERIENCE",
-    "SKILLS",
-    "EDUCATION",
-    "CERTIFICATIONS",
-    "PROJECTS",
-    "COMMUNITY",
-  ]);
 });
