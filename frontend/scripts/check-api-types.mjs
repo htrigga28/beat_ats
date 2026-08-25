@@ -9,9 +9,13 @@ const generated = join(directory, "api-types.ts");
 // where the npm-generated ``.bin`` shim is a ``.cmd`` file.
 const generator = join(process.cwd(), "node_modules", "openapi-typescript", "bin", "cli.js");
 try {
-  execFileSync(process.execPath, [generator, "http://127.0.0.1:8000/openapi.json", "-o", generated], {
-    stdio: "inherit",
-  });
+  execFileSync(
+    process.execPath,
+    [generator, "http://127.0.0.1:8000/openapi.json", "-o", generated],
+    {
+      stdio: "inherit",
+    },
+  );
   const expected = readFileSync("src/api-types.ts", "utf8");
   const actual = readFileSync(generated, "utf8");
   if (expected !== actual) {
