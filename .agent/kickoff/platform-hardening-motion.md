@@ -18,7 +18,7 @@
 - Task workspace: `C:\Users\ASUS\Desktop\projects\beat_ats\.forest\worktrees\codex\platform-hardening-motion\.agent\kickoff`
 - Created: 2026-08-25
 - Target date: not specified; the work is feasible but needs full regression and browser validation
-- Current phase: awaiting plan approval
+- Current phase: implementation
 
 ## Objective
 
@@ -124,6 +124,7 @@ The product is a private, single-user application. It must not gain accounts, sa
 
 - Reviewed Markdown plan: `.agent/kickoff/platform-hardening-motion-plan.md`
 - Editable visual plan: `.lavish/platform-hardening-motion-plan.html`
+- Accepted read-only plan: `.agent/kickoff/platform-hardening-motion-plan.accepted.html`
 - Adversarial review: `.agent/kickoff/platform-hardening-motion-adversarial-review.md`
 - Simplicity review: `.agent/kickoff/platform-hardening-motion-simplicity-review.md`
 - All Major, Simplify, Question, and Minor findings have recorded dispositions. No material conflict remains.
@@ -133,3 +134,5 @@ The product is a private, single-user application. It must not gain accounts, sa
 - Baseline fix commit: `820fde0`
 - Kickoff configuration commit: `5523f81`
 - Kickoff version preflight: installed and canonical version are both `0.3.0` on 2026-08-25.
+- The user approved the reviewed full plan on 2026-08-25.
+- Implementation delegation is `always`. Execution uses `gpt-5.6-terra` with xhigh reasoning in dependency-aware waves.
