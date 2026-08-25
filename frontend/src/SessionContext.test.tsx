@@ -1,12 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionProvider, useSession } from "./SessionContext";
-import type {
-  BulletRewriteResponse,
-  GapAnalysis,
-  ResumeDocument,
-  RuntimeConfig,
-} from "./types";
+import type { BulletRewriteResponse, GapAnalysis, ResumeDocument, RuntimeConfig } from "./types";
 
 const api = vi.hoisted(() => ({
   analyzeResume: vi.fn(),
@@ -61,7 +56,9 @@ const rewrites: BulletRewriteResponse = {
     {
       bullet_id: "b1",
       original_text: "Built accessible interfaces",
-      alternatives: [{ text: "Built accessible React interfaces", incorporated_keywords: ["React"] }],
+      alternatives: [
+        { text: "Built accessible React interfaces", incorporated_keywords: ["React"] },
+      ],
     },
   ],
 };
@@ -109,7 +106,9 @@ describe("request lifecycle", () => {
     api.analyzeResume.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
 
     act(() => session.saveResume(resume, true));
-    act(() => session.updateJobDescription("A new frontend role that requires React and TypeScript."));
+    act(() =>
+      session.updateJobDescription("A new frontend role that requires React and TypeScript."),
+    );
     act(() => session.saveResume(resume, true));
 
     expect(api.analyzeResume).toHaveBeenLastCalledWith(
@@ -138,14 +137,18 @@ describe("request lifecycle", () => {
     api.generateDocx.mockReturnValue(docx.promise);
 
     act(() => session.requestRewrites(["b1"]));
-    act(() => session.updateJobDescription("A new frontend role that requires React and TypeScript."));
+    act(() =>
+      session.updateJobDescription("A new frontend role that requires React and TypeScript."),
+    );
     await act(async () => rewrite.resolve(rewrites));
 
     expect(session.state.rewritesByBulletId).toEqual({});
     expect(session.state.selectedBulletIds).toEqual([]);
 
     act(() => session.createDocx());
-    act(() => session.updateJobDescription("A third frontend role that requires accessible UI delivery."));
+    act(() =>
+      session.updateJobDescription("A third frontend role that requires accessible UI delivery."),
+    );
     await act(async () => docx.resolve(new Blob(["docx"])));
 
     expect(session.state.docxBlob).toBeNull();

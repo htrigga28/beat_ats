@@ -150,9 +150,7 @@ export function ReviewStep({
             <h3 id="target-description-title">Target job description</h3>
             <p>Update this target before comparison. Your resume and accepted wording stay.</p>
           </div>
-          <span id="target-description-count">
-            {targetCharacterCount} / 50 minimum
-          </span>
+          <span id="target-description-count">{targetCharacterCount} / 50 minimum</span>
         </div>
         <label className="target-description-field">
           <span className="sr-only">Target job description</span>
@@ -171,8 +169,8 @@ export function ReviewStep({
         {targetError && <p className="target-description-error">{targetError}</p>}
         {analysisStale && (
           <p className="target-description-stale" role="status">
-            The previous advisory comparison is out of date. Request a new comparison before you
-            use it.
+            The previous advisory comparison is out of date. Request a new comparison before you use
+            it.
           </p>
         )}
       </section>

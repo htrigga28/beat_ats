@@ -188,7 +188,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           type: "error",
           error: {
             code: "job_description_too_short",
-            message: "Enter a target job description with at least 50 characters before comparison.",
+            message:
+              "Enter a target job description with at least 50 characters before comparison.",
             retryable: false,
           },
         });
@@ -221,26 +222,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [run],
   );
 
-  const applyChoices = useCallback((choices: Record<string, string>) => {
-    const snapshot = stateRef.current;
-    if (!snapshot.resume) return;
-    let resume = snapshot.resume;
-    for (const [bulletId, text] of Object.entries(choices)) {
-      if (!text.trim()) continue;
-      const before = findBulletText(resume, bulletId);
-      if (!before || before === text.trim()) continue;
-      resume = replaceBulletText(resume, { [bulletId]: text });
-      const change: AppliedChange = {
-        bulletId,
-        source: "ai",
-        before: snapshot.appliedChanges[bulletId]?.before ?? before,
-        after: text.trim(),
-        appliedAt: Date.now(),
-      };
-      invalidateRequest();
-      dispatch({ type: "suggestionApplied", resume, change });
-    }
-  }, [invalidateRequest]);
+  const applyChoices = useCallback(
+    (choices: Record<string, string>) => {
+      const snapshot = stateRef.current;
+      if (!snapshot.resume) return;
+      let resume = snapshot.resume;
+      for (const [bulletId, text] of Object.entries(choices)) {
+        if (!text.trim()) continue;
+        const before = findBulletText(resume, bulletId);
+        if (!before || before === text.trim()) continue;
+        resume = replaceBulletText(resume, { [bulletId]: text });
+        const change: AppliedChange = {
+          bulletId,
+          source: "ai",
+          before: snapshot.appliedChanges[bulletId]?.before ?? before,
+          after: text.trim(),
+          appliedAt: Date.now(),
+        };
+        invalidateRequest();
+        dispatch({ type: "suggestionApplied", resume, change });
+      }
+    },
+    [invalidateRequest],
+  );
 
   const selectBullets = useCallback((ids: string[]) => dispatch({ type: "selected", ids }), []);
   const openSuggestions = useCallback(
@@ -252,17 +256,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     (bulletId: string, text: string) => applyChoices({ [bulletId]: text }),
     [applyChoices],
   );
-  const restoreBullet = useCallback((bulletId: string) => {
-    const snapshot = stateRef.current;
-    if (!snapshot.resume || !snapshot.originalResume) return;
-    const originalText =
-      snapshot.appliedChanges[bulletId]?.before ??
-      findBulletText(snapshot.originalResume, bulletId);
-    if (!originalText) return;
-    const resume = replaceBulletText(snapshot.resume, { [bulletId]: originalText });
-    invalidateRequest();
-    dispatch({ type: "bulletRestored", resume, bulletId });
-  }, [invalidateRequest]);
+  const restoreBullet = useCallback(
+    (bulletId: string) => {
+      const snapshot = stateRef.current;
+      if (!snapshot.resume || !snapshot.originalResume) return;
+      const originalText =
+        snapshot.appliedChanges[bulletId]?.before ??
+        findBulletText(snapshot.originalResume, bulletId);
+      if (!originalText) return;
+      const resume = replaceBulletText(snapshot.resume, { [bulletId]: originalText });
+      invalidateRequest();
+      dispatch({ type: "bulletRestored", resume, bulletId });
+    },
+    [invalidateRequest],
+  );
 
   const reanalyze = useCallback(() => {
     const snapshot = stateRef.current;
