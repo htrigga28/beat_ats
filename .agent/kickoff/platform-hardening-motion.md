@@ -18,7 +18,7 @@
 - Task workspace: `C:\Users\ASUS\Desktop\projects\beat_ats\.forest\worktrees\codex\platform-hardening-motion\.agent\kickoff`
 - Created: 2026-08-25
 - Target date: not specified; the work is feasible but needs full regression and browser validation
-- Current phase: implementation
+- Current phase: pull request preparation
 
 ## Objective
 
@@ -135,3 +135,14 @@ The product is a private, single-user application. It must not gain accounts, sa
 - Kickoff version preflight: installed and canonical version are both `0.3.0` on 2026-08-25.
 - The user approved the reviewed full plan on 2026-08-25.
 - Implementation delegation is `always`. Execution uses `gpt-5.6-terra` with xhigh reasoning in dependency-aware waves.
+- The implementation adds editable target text, guarded request completion, one real-stack test, and purposeful GSAP motion.
+- The real-stack test uses a local fake Gemini service. It does not send the supplied resume to an external model.
+- The final Ponytail review found five cuts. All cuts are complete. The changes remove 678 lines of duplicate or unnecessary code and assertions.
+- The final correctness review found two P1 issues and two P2 issues. All four issues are fixed. The fixes restore all analysis evidence, enforce the 50,000-character limit, restore the coverage gate, and verify every populated DOCX field.
+- `python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=85 -q` passes with 52 tests and 91.66% total coverage.
+- `npm test` passes with 39 tests and 85.41% branch coverage.
+- Ruff lint and format, MyPy, ESLint, Prettier, TypeScript, Vite build, and the OpenAPI type drift check pass.
+- The normal Playwright suite passes with 14 tests. The real-stack Playwright suite passes with the supplied resume and complete DOCX checks.
+- `npm audit --omit=dev` reports zero production vulnerabilities.
+- Docker is not installed in the local environment. The Docker build remains a CI check.
+- A production release still requires the deployer to prove signed-out denial for the page, configuration route, and sensitive analysis route. If the proof is absent, the application must remain localhost-only.
