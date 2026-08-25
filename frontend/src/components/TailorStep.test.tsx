@@ -1,8 +1,9 @@
+import { gsap } from "gsap";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { BulletRewriteResponse, GapAnalysis, ResumeDocument } from "../types";
+import type { AppliedChange, BulletRewriteResponse, GapAnalysis, ResumeDocument } from "../types";
 import { changedBulletCount, TailorStep } from "./TailorStep";
 
 const resume: ResumeDocument = {
@@ -70,30 +71,38 @@ function renderTailor(overrides: Partial<ComponentProps<typeof TailorStep>> = {}
   const onGenerate = vi.fn();
   const onApply = vi.fn();
   const onRestore = vi.fn();
-  const result = render(
-    <TailorStep
-      resume={resume}
-      analysis={analysis}
-      jobDescription={"Senior frontend engineer ".repeat(5)}
-      rewritesByBulletId={rewrites}
-      selectedIds={["b1", "b2"]}
-      activeBulletId="b1"
-      selectionLocked
-      openedSuggestionIds={["b1"]}
-      appliedChanges={{}}
-      busy={false}
-      onSelectionChange={onSelectionChange}
-      onGenerate={onGenerate}
-      onOpen={onOpen}
-      onChangeSelection={vi.fn()}
-      onApply={onApply}
-      onRestore={onRestore}
-      onBack={vi.fn()}
-      onContinue={vi.fn()}
-      {...overrides}
-    />,
-  );
-  return { ...result, onOpen, onSelectionChange, onGenerate, onApply, onRestore };
+  const props: ComponentProps<typeof TailorStep> = {
+    resume,
+    analysis,
+    jobDescription: "Senior frontend engineer ".repeat(5),
+    rewritesByBulletId: rewrites,
+    selectedIds: ["b1", "b2"],
+    activeBulletId: "b1",
+    selectionLocked: true,
+    openedSuggestionIds: ["b1"],
+    appliedChanges: {},
+    busy: false,
+    onSelectionChange,
+    onGenerate,
+    onOpen,
+    onChangeSelection: vi.fn(),
+    onApply,
+    onRestore,
+    onBack: vi.fn(),
+    onContinue: vi.fn(),
+    ...overrides,
+  };
+  const result = render(<TailorStep {...props} />);
+  return {
+    ...result,
+    onOpen,
+    onSelectionChange,
+    onGenerate,
+    onApply,
+    onRestore,
+    rerenderTailor: (next: Partial<ComponentProps<typeof TailorStep>>) =>
+      result.rerender(<TailorStep {...props} {...next} />),
+  };
 }
 
 describe("TailorStep review progress", () => {
@@ -196,6 +205,54 @@ describe("TailorStep review progress", () => {
 
     fireEvent.click(appliedDesktop.getByRole("button", { name: "Restore original" }));
     expect(applied.onRestore).toHaveBeenCalledWith("b1");
+  });
+
+  it("does not replay completed or restored wording after a back-navigation remount", () => {
+    const oldest: AppliedChange = {
+      bulletId: "b1",
+      source: "ai",
+      before: "Built accessible interfaces",
+      after: "Built accessible React interfaces",
+      appliedAt: 1,
+    };
+    const newest: AppliedChange = {
+      bulletId: "b2",
+      source: "ai",
+      before: "Improved application performance",
+      after: "Improved React application performance",
+      appliedAt: 2,
+    };
+    const firstRender = renderTailor({
+      appliedChanges: { b1: oldest },
+    });
+    const bulletTargets = (bulletId: string) =>
+      Array.from(
+        firstRender.container.querySelectorAll<HTMLElement>(`[data-bullet-id="${bulletId}"]`),
+      );
+
+    firstRender.rerenderTailor({ appliedChanges: { b1: oldest, b2: newest } });
+    expect(bulletTargets("b2").every((target) => target.dataset.motionState === "running")).toBe(
+      true,
+    );
+
+    firstRender.unmount();
+
+    const returned = renderTailor({ appliedChanges: { b1: oldest, b2: newest } });
+    const returnedTargets = (bulletId: string) =>
+      Array.from(
+        returned.container.querySelectorAll<HTMLElement>(`[data-bullet-id="${bulletId}"]`),
+      );
+    expect(returnedTargets("b2").every((target) => target.dataset.motionState !== "running")).toBe(
+      true,
+    );
+
+    returned.rerenderTailor({ appliedChanges: { b1: oldest } });
+    expect(returnedTargets("b1").every((target) => target.dataset.motionState !== "running")).toBe(
+      true,
+    );
+    expect(returnedTargets("b1").every((target) => gsap.getTweensOf(target).length === 0)).toBe(
+      true,
+    );
   });
 
   it("counts changed work and project bullets against the immutable source", () => {

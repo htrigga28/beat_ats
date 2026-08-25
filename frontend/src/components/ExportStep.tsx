@@ -10,6 +10,7 @@ import {
 import type { AppliedChange, ResumeDocument, TruthConfirmations } from "../types";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import { ExportCompletionAcknowledgement } from "./ExportCompletionAcknowledgement";
 import { ResumePreview } from "./ResumePreview";
 
 interface Props {
@@ -20,8 +21,10 @@ interface Props {
   analysisStale: boolean;
   busy: boolean;
   exportStatus: "idle" | "compiling" | "downloading";
+  download: Blob | null;
   onTruthChange: (key: keyof TruthConfirmations, checked: boolean) => void;
   onGenerate: () => void;
+  onDownloadAgain: () => void;
   onReanalyze: () => void;
   onBack: () => void;
 }
@@ -45,8 +48,10 @@ export function ExportStep({
   analysisStale,
   busy,
   exportStatus,
+  download,
   onTruthChange,
   onGenerate,
+  onDownloadAgain,
   onReanalyze,
   onBack,
 }: Props) {
@@ -61,10 +66,10 @@ export function ExportStep({
       ? "Compiling ATS-safe document…"
       : exportStatus === "downloading"
         ? "Downloading file…"
-        : "Download ATS-optimized Word document (.docx)";
+        : "Download ATS-safe Word document (.docx)";
 
   return (
-    <section className="stage-enter export-stage" aria-labelledby="export-title">
+    <section className="export-stage" aria-labelledby="export-title">
       <div className="stage-intro export-intro">
         <span className="stage-kicker">Stage 4 · Final proof</span>
         <h2 id="export-title">Verify the final document</h2>
@@ -190,6 +195,19 @@ export function ExportStep({
             </span>
           ) : (
             <span className="export-locked">Complete both truth checks to unlock download.</span>
+          )}
+          {exportStatus === "idle" && download && (
+            <>
+              <ExportCompletionAcknowledgement completion={download} />
+              <Button
+                type="button"
+                variant="secondary"
+                className="download-again-button"
+                onClick={onDownloadAgain}
+              >
+                <Download aria-hidden="true" /> Download again
+              </Button>
+            </>
           )}
         </aside>
       </div>

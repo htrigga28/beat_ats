@@ -2,6 +2,7 @@ import { Check, CircleHelp, LockKeyhole, RotateCcw, ShieldCheck } from "lucide-r
 import { useEffect, useRef } from "react";
 import { ExportStep } from "./components/ExportStep";
 import { ReviewStep } from "./components/ReviewStep";
+import { StageMotionBoundary } from "./components/StageMotionBoundary";
 import { TailorStep } from "./components/TailorStep";
 import { UploadStep } from "./components/UploadStep";
 import {
@@ -21,13 +22,14 @@ import type { Step } from "./types";
 
 const labels = ["Upload", "Review", "Tailor", "Export"] as const;
 
-function Application() {
+export function Application() {
   const {
     state,
     dispatch,
     retry,
     uploadResume,
     saveResume,
+    updateJobDescription,
     requestRewrites,
     selectBullets,
     openSuggestions,
@@ -36,11 +38,13 @@ function Application() {
     restoreBullet,
     reanalyze,
     createDocx,
+    downloadDocx,
     clearSession,
     cancelActiveRequest,
     setStep,
   } = useSession();
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const stepperRef = useRef<HTMLElement>(null);
   const hasPrivateData = state.resume !== null || state.jobDescription.length > 0;
 
   useEffect(() => {
@@ -87,7 +91,7 @@ function Application() {
         </div>
       </header>
 
-      <nav className="workflow-stepper" aria-label="Resume tailoring progress">
+      <nav className="workflow-stepper" aria-label="Resume tailoring progress" ref={stepperRef}>
         <ol>
           {labels.map((label, index) => {
             const step = (index + 1) as Step;
@@ -99,7 +103,7 @@ function Application() {
                 key={label}
                 aria-current={current ? "step" : undefined}
               >
-                <span className="step-marker" aria-hidden="true">
+                <span className="step-marker" data-step-marker={step} aria-hidden="true">
                   {complete ? <Check /> : step}
                 </span>
                 <span className="step-label">
@@ -139,66 +143,75 @@ function Application() {
           </div>
         )}
 
-        {state.step === 1 && (
-          <UploadStep
-            config={state.config}
-            busy={Boolean(state.activeRequest)}
-            uploadProgress={state.uploadProgress}
-            ingestionPhase={state.ingestionPhase}
-            onCancel={cancelActiveRequest}
-            onUpload={uploadResume}
-          />
-        )}
-        {state.step === 2 && state.resume && state.originalResume && (
-          <ReviewStep
-            resume={state.resume}
-            original={state.originalResume}
-            warnings={state.warnings.filter(
-              (warning) => !state.dismissedWarnings.includes(warning),
-            )}
-            busy={Boolean(state.activeRequest)}
-            onSave={saveResume}
-            onDismissWarning={(warning) => dispatch({ type: "warningDismissed", warning })}
-            onBackConfirmed={clearSession}
-          />
-        )}
-        {state.step === 3 && state.resume && state.originalResume && state.analysis && (
-          <TailorStep
-            resume={state.resume}
-            analysis={state.analysis}
-            jobDescription={state.jobDescription}
-            rewritesByBulletId={state.rewritesByBulletId}
-            selectedIds={state.selectedBulletIds}
-            activeBulletId={state.activeBulletId}
-            selectionLocked={state.selectionLocked}
-            openedSuggestionIds={state.openedSuggestionIds}
-            appliedChanges={state.appliedChanges}
-            busy={Boolean(state.activeRequest)}
-            onSelectionChange={selectBullets}
-            onGenerate={requestRewrites}
-            onOpen={openSuggestions}
-            onChangeSelection={changeSelection}
-            onApply={applySuggestion}
-            onRestore={restoreBullet}
-            onBack={() => setStep(2)}
-            onContinue={() => setStep(4)}
-          />
-        )}
-        {state.step === 4 && state.resume && state.originalResume && (
-          <ExportStep
-            resume={state.resume}
-            original={state.originalResume}
-            appliedChanges={state.appliedChanges}
-            truthConfirmations={state.truthConfirmations}
-            analysisStale={state.analysisStale}
-            busy={Boolean(state.activeRequest)}
-            exportStatus={state.exportStatus}
-            onTruthChange={(key, checked) => dispatch({ type: "truthConfirmation", key, checked })}
-            onGenerate={createDocx}
-            onReanalyze={reanalyze}
-            onBack={() => setStep(3)}
-          />
-        )}
+        <StageMotionBoundary step={state.step} stepperRef={stepperRef}>
+          {state.step === 1 && (
+            <UploadStep
+              config={state.config}
+              busy={Boolean(state.activeRequest)}
+              uploadProgress={state.uploadProgress}
+              ingestionPhase={state.ingestionPhase}
+              onCancel={cancelActiveRequest}
+              onUpload={uploadResume}
+            />
+          )}
+          {state.step === 2 && state.resume && state.originalResume && (
+            <ReviewStep
+              resume={state.resume}
+              original={state.originalResume}
+              jobDescription={state.jobDescription}
+              analysisStale={state.analysisStale}
+              warnings={state.warnings.filter(
+                (warning) => !state.dismissedWarnings.includes(warning),
+              )}
+              busy={Boolean(state.activeRequest)}
+              onSave={saveResume}
+              onJobDescriptionChange={updateJobDescription}
+              onDismissWarning={(warning) => dispatch({ type: "warningDismissed", warning })}
+              onBackConfirmed={clearSession}
+            />
+          )}
+          {state.step === 3 && state.resume && state.originalResume && state.analysis && (
+            <TailorStep
+              resume={state.resume}
+              analysis={state.analysis}
+              jobDescription={state.jobDescription}
+              rewritesByBulletId={state.rewritesByBulletId}
+              selectedIds={state.selectedBulletIds}
+              activeBulletId={state.activeBulletId}
+              selectionLocked={state.selectionLocked}
+              openedSuggestionIds={state.openedSuggestionIds}
+              appliedChanges={state.appliedChanges}
+              busy={Boolean(state.activeRequest)}
+              onSelectionChange={selectBullets}
+              onGenerate={requestRewrites}
+              onOpen={openSuggestions}
+              onChangeSelection={changeSelection}
+              onApply={applySuggestion}
+              onRestore={restoreBullet}
+              onBack={() => setStep(2)}
+              onContinue={() => setStep(4)}
+            />
+          )}
+          {state.step === 4 && state.resume && state.originalResume && (
+            <ExportStep
+              resume={state.resume}
+              original={state.originalResume}
+              appliedChanges={state.appliedChanges}
+              truthConfirmations={state.truthConfirmations}
+              analysisStale={state.analysisStale}
+              busy={Boolean(state.activeRequest)}
+              exportStatus={state.exportStatus}
+              download={state.docxBlob}
+              onTruthChange={(key, checked) =>
+                dispatch({ type: "truthConfirmation", key, checked })
+              }
+              onGenerate={createDocx}
+              onDownloadAgain={downloadDocx}
+              onReanalyze={reanalyze}
+              onBack={() => setStep(3)}
+            />
+          )}
+        </StageMotionBoundary>
       </main>
 
       <footer className="application-footer">

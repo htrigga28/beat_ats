@@ -1,0 +1,153 @@
+{
+  "job_sources": [
+    {
+      "checked_on": "2026-08-25",
+      "organization": "Canonical",
+      "role": "Senior, Staff, or Principal Engineer",
+      "url": "https://canonical.com/careers/5142887/senior-staff-principal-engineer-remote",
+      "stable_excerpt": "The role asks for engineering leadership, strong software delivery, and collaboration across distributed teams."
+    },
+    {
+      "checked_on": "2026-08-25",
+      "organization": "Relay",
+      "role": "Senior Frontend Developer",
+      "url": "https://jobs.lever.co/relay/08053706-31b5-4fe1-9546-ad04b9cb0140",
+      "stable_excerpt": "Build accessible React and TypeScript product interfaces, partner with design, and improve a shared component system."
+    }
+  ],
+  "selected_job_description": "Relay seeks a Senior Frontend Developer to build accessible React and TypeScript product interfaces. The role partners with design, improves a shared component system, and delivers reliable customer-facing web experiences.",
+  "resume": {
+    "contact": {
+      "full_name": "Test Candidate",
+      "email": "test.candidate@example.test",
+      "phone": "+1 555 0100",
+      "location": "Remote",
+      "links": [
+        "https://example.test/test-candidate"
+      ]
+    },
+    "professional_summary": "Frontend engineer who builds reliable, accessible business software.",
+    "work_experience": [
+      {
+        "employer": "Example Labs",
+        "title": "Frontend Engineer",
+        "location": "Remote",
+        "start_date": "2022",
+        "end_date": "Present",
+        "bullets": [
+          {
+            "text": "Built React interfaces used by 10 product teams."
+          },
+          {
+            "text": "Partnered with product and design teams on customer workflows."
+          }
+        ]
+      }
+    ],
+    "skills": [
+      {
+        "label": "Frontend",
+        "items": [
+          "React",
+          "TypeScript",
+          "Accessibility"
+        ]
+      }
+    ],
+    "education": [
+      {
+        "institution": "Example University",
+        "credential": "BSc Computer Science",
+        "location": "Remote",
+        "dates": "2018",
+        "details": [
+          "Completed a software engineering capstone."
+        ]
+      }
+    ],
+    "certifications": [
+      "Accessibility Fundamentals"
+    ],
+    "projects": [
+      {
+        "name": "Component Toolkit",
+        "role": "Maintainer",
+        "dates": "2023",
+        "link": "https://example.test/toolkit",
+        "bullets": [
+          {
+            "text": "Published reusable components for 6 products."
+          }
+        ]
+      }
+    ],
+    "additional_sections": [
+      {
+        "title": "Community",
+        "items": [
+          "Mentor at a local frontend group."
+        ]
+      }
+    ]
+  },
+  "analysis": {
+    "match_score": 72,
+    "keyword_gaps": [
+      {
+        "term": "TypeScript",
+        "category": "technical_skill",
+        "importance": "The role names TypeScript as a core frontend tool."
+      }
+    ],
+    "title_alignment": {
+      "target_title": "Senior Frontend Developer",
+      "assessment": "partially_aligned",
+      "rationale": "The resume shows relevant frontend delivery and collaboration.",
+      "equivalent_title_suggestions": []
+    },
+    "actionable_recommendations": [
+      "Keep official titles unchanged.",
+      "Emphasize accessible interface delivery where supported.",
+      "Review every suggested change before export."
+    ]
+  },
+  "rewrites": [
+    {
+      "original_text": "Built React interfaces used by 10 product teams.",
+      "accepted_text": "Built accessible React interfaces used by 10 product teams.",
+      "alternatives": [
+        {
+          "text": "Built accessible React interfaces used by 10 product teams.",
+          "incorporated_keywords": [
+            "accessible",
+            "React"
+          ]
+        },
+        {
+          "text": "Delivered React interfaces that supported 10 product teams.",
+          "incorporated_keywords": [
+            "React"
+          ]
+        }
+      ]
+    },
+    {
+      "original_text": "Published reusable components for 6 products.",
+      "accepted_text": "Published accessible reusable components for 6 products.",
+      "alternatives": [
+        {
+          "text": "Published accessible reusable components for 6 products.",
+          "incorporated_keywords": [
+            "accessible"
+          ]
+        },
+        {
+          "text": "Delivered reusable components across 6 product teams.",
+          "incorporated_keywords": [
+            "component system"
+          ]
+        }
+      ]
+    }
+  ]
+}

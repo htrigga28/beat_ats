@@ -6,6 +6,7 @@ from collections.abc import Generator
 from io import BytesIO
 
 import pytest
+from docx import Document
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from google.genai import types
@@ -26,7 +27,7 @@ from schemas import (
     GapAnalysis,
     ResumeDocument,
 )
-from settings import Settings
+from settings import Settings, get_settings
 
 
 def _pdf_bytes(text: str | None = None) -> bytes:
@@ -139,10 +140,15 @@ def fake_service() -> Generator[FakeGeminiService, None, None]:
     app.dependency_overrides.clear()
 
 
-def test_ingest_text_pdf_without_persisting_upload(fake_service: FakeGeminiService) -> None:
+def _stream_events(response: object) -> list[dict[str, object]]:
+    assert hasattr(response, "text")
+    return [json.loads(line) for line in response.text.splitlines()]
+
+
+def test_stream_ingests_text_pdf_without_persisting_upload(fake_service: FakeGeminiService) -> None:
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/resumes/ingest",
+            "/api/v1/resumes/ingest/stream",
             files={
                 "file": (
                     "resume.pdf",
@@ -153,9 +159,11 @@ def test_ingest_text_pdf_without_persisting_upload(fake_service: FakeGeminiServi
             data={"ai_processing_consent": "true", "allow_vision_fallback": "true"},
         )
 
+    events = _stream_events(response)
     assert response.status_code == 200
-    assert response.json()["extraction_method"] == "pdf_text"
-    assert response.json()["resume"]["contact"]["full_name"] == "Jane Doe"
+    assert events[-1]["type"] == "result"
+    assert events[-1]["data"]["extraction_method"] == "pdf_text"
+    assert events[-1]["data"]["resume"]["contact"]["full_name"] == "Jane Doe"
     assert fake_service.text_calls
     assert fake_service.pdf_calls == 0
 
@@ -315,9 +323,17 @@ def test_runtime_config_exposes_default_upload_contract() -> None:
     assert response.json() == {
         "max_upload_bytes": 10 * 1024 * 1024,
         "accepted_extensions": ["pdf", "docx"],
-        "vision_fallback_available": True,
+        "vision_fallback_available": get_settings().gemini_api_key is not None,
         "gemini_model": "gemini-3.1-flash-lite",
     }
+
+
+def test_openapi_exposes_only_streaming_resume_ingestion() -> None:
+    with TestClient(app) as client:
+        paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/api/v1/resumes/ingest" not in paths
+    assert "/api/v1/resumes/ingest/stream" in paths
 
 
 def test_gemini_schema_removes_unsupported_pydantic_constraints() -> None:
@@ -337,7 +353,7 @@ def test_ingest_uses_runtime_upload_limit(
     monkeypatch.setattr("analyzer.get_settings", lambda: Settings(max_upload_bytes=4 * 1024 * 1024))
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/resumes/ingest",
+            "/api/v1/resumes/ingest/stream",
             files={"file": ("resume.pdf", b"%PDF-" + b"0" * (4 * 1024 * 1024), "application/pdf")},
             data={"ai_processing_consent": "true", "allow_vision_fallback": "true"},
         )
@@ -346,31 +362,56 @@ def test_ingest_uses_runtime_upload_limit(
     assert "4 MB" in response.json()["detail"]["message"]
 
 
-def test_ingest_scanned_pdf_requires_explicit_vision_permission(
+def test_stream_ingest_scanned_pdf_requires_explicit_vision_permission(
     fake_service: FakeGeminiService,
 ) -> None:
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/resumes/ingest",
+            "/api/v1/resumes/ingest/stream",
             files={"file": ("resume.pdf", _pdf_bytes(), "application/pdf")},
             data={"ai_processing_consent": "true", "allow_vision_fallback": "false"},
         )
 
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "vision_consent_required"
+    events = _stream_events(response)
+    assert response.status_code == 200
+    assert events[-1]["error"]["code"] == "vision_consent_required"
     assert fake_service.pdf_calls == 0
 
 
-def test_ingest_scanned_pdf_uses_inline_vision(fake_service: FakeGeminiService) -> None:
+def test_stream_ingest_rejects_empty_docx_before_gemini(fake_service: FakeGeminiService) -> None:
+    stream = BytesIO()
+    Document().save(stream)
+
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/resumes/ingest",
+            "/api/v1/resumes/ingest/stream",
+            files={
+                "file": (
+                    "empty.docx",
+                    stream.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+            data={"ai_processing_consent": "true", "allow_vision_fallback": "false"},
+        )
+
+    events = _stream_events(response)
+    assert response.status_code == 200
+    assert events[-1]["error"]["code"] == "document_parse_failed"
+    assert fake_service.text_calls == []
+
+
+def test_stream_ingest_scanned_pdf_uses_inline_vision(fake_service: FakeGeminiService) -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest/stream",
             files={"file": ("resume.pdf", _pdf_bytes(), "application/pdf")},
             data={"ai_processing_consent": "true", "allow_vision_fallback": "true"},
         )
 
+    events = _stream_events(response)
     assert response.status_code == 200
-    assert response.json()["extraction_method"] == "gemini_vision"
+    assert events[-1]["data"]["extraction_method"] == "gemini_vision"
     assert fake_service.pdf_calls == 1
 
 

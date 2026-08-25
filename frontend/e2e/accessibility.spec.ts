@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createRequire } from "node:module";
-import { mockApi } from "./fixtures";
+import { completeUpload, mockApi } from "./fixtures";
 
 const require = createRequire(import.meta.url);
 
@@ -15,10 +15,44 @@ test("upload is keyboard-operable, reduced-motion safe, and axe-clean on mobile"
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Beat ATS home" })).toBeFocused();
-  const animationDuration = await page
-    .locator(".stage-enter")
-    .evaluate((element) => getComputedStyle(element).animationDuration);
-  expect(Number.parseFloat(animationDuration)).toBeLessThan(0.001);
+  const stage = page.locator('[data-motion-stage="1"]');
+  await expect(stage).toHaveAttribute("data-motion-state", "settled");
+  expect(
+    await stage.evaluate(async (element) => {
+      const before = element.getBoundingClientRect();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const after = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        inlineOpacity: element.style.opacity,
+        inlineTransform: element.style.transform,
+        opacity: style.opacity,
+        transform: style.transform,
+        topStable: before.top === after.top,
+        leftStable: before.left === after.left,
+      };
+    }),
+  ).toEqual({
+    inlineOpacity: "",
+    inlineTransform: "",
+    opacity: "1",
+    transform: "none",
+    topStable: true,
+    leftStable: true,
+  });
+
+  await completeUpload(page);
+  await page.getByRole("button", { name: /Request advisory comparison/ }).click();
+  const analysis = page.locator('[data-motion-ack="analysis"]');
+  await expect(analysis).toHaveAttribute("data-motion-state", "settled");
+  expect(
+    await analysis.evaluate((element) => ({
+      inlineOpacity: element.style.opacity,
+      inlineTransform: element.style.transform,
+      opacity: getComputedStyle(element).opacity,
+      transform: getComputedStyle(element).transform,
+    })),
+  ).toEqual({ inlineOpacity: "", inlineTransform: "", opacity: "1", transform: "none" });
 
   await page.addScriptTag({ path: require.resolve("axe-core/axe.min.js") });
   const results = await page.evaluate(async () => {

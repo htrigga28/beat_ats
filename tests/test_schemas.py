@@ -78,3 +78,33 @@ def test_rewrite_request_limits_selected_bullets() -> None:
             bullet_ids=[str(index) for index in range(11)],
             ai_processing_consent=True,
         )
+
+
+def test_resume_rejects_duplicate_entry_and_bullet_ids() -> None:
+    with pytest.raises(ValidationError, match="Resume entry IDs"):
+        ResumeDocument.model_validate(
+            {
+                "contact": {"full_name": "Jane Doe"},
+                "work_experience": [
+                    {"id": "entry-1", "employer": "A", "title": "Engineer"},
+                    {"id": "entry-1", "employer": "B", "title": "Designer"},
+                ],
+            }
+        )
+
+    with pytest.raises(ValidationError, match="Resume bullet IDs"):
+        ResumeDocument.model_validate(
+            {
+                "contact": {"full_name": "Jane Doe"},
+                "work_experience": [
+                    {
+                        "employer": "A",
+                        "title": "Engineer",
+                        "bullets": [
+                            {"id": "bullet-1", "text": "Built interfaces"},
+                            {"id": "bullet-1", "text": "Improved accessibility"},
+                        ],
+                    }
+                ],
+            }
+        )

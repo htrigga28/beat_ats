@@ -249,8 +249,12 @@ def extract_docx_text(
         raise CorruptDocumentError("The DOCX document could not be read safely.") from exc
 
     text = clean_text("\n".join(lines))
-    warnings = () if text else ("No readable text was found in the DOCX document.",)
-    return ExtractionResult(text=text, file_type="docx", warnings=warnings)
+    if not text:
+        raise CorruptDocumentError(
+            "No readable text was found in the DOCX document. "
+            "Export a text-based copy and try again."
+        )
+    return ExtractionResult(text=text, file_type="docx")
 
 
 def extract_resume(
