@@ -155,6 +155,61 @@ describe("request lifecycle", () => {
     expect(session.state.exportStatus).toBe("idle");
   });
 
+  it("shows a retryable analysis error and retries the saved request", async () => {
+    api.analyzeResume
+      .mockRejectedValueOnce({
+        code: "provider_unavailable",
+        message: "Try again",
+        retryable: true,
+      })
+      .mockResolvedValueOnce(analysis);
+
+    act(() => session.saveResume(resume, true));
+    await waitFor(() => expect(session.state.error?.code).toBe("provider_unavailable"));
+    expect(session.retry).not.toBeNull();
+
+    act(() => session.retry?.());
+    await waitFor(() => expect(session.state.analysis).toEqual(analysis));
+    expect(api.analyzeResume).toHaveBeenCalledTimes(2);
+    expect(session.state.error).toBeNull();
+  });
+
+  it("normalizes an unknown request error", async () => {
+    api.analyzeResume.mockRejectedValueOnce(new Error("offline"));
+    api.normalizeError.mockReturnValueOnce({
+      code: "request_failed",
+      message: "The private API is unavailable.",
+      retryable: true,
+    });
+
+    act(() => session.saveResume(resume, true));
+    await waitFor(() => expect(session.state.error?.code).toBe("request_failed"));
+    expect(api.normalizeError).toHaveBeenCalled();
+  });
+
+  it("aborts and ignores late requests when cancelled or cleared", async () => {
+    const cancelled = deferred<GapAnalysis>();
+    const cleared = deferred<GapAnalysis>();
+    api.analyzeResume.mockReturnValueOnce(cancelled.promise).mockReturnValueOnce(cleared.promise);
+
+    act(() => session.saveResume(resume, true));
+    const cancelledSignal = api.analyzeResume.mock.calls[0][3] as AbortSignal;
+    act(() => session.cancelActiveRequest());
+    expect(cancelledSignal.aborted).toBe(true);
+    expect(session.state.activeRequest).toBeNull();
+    expect(session.retry).toBeNull();
+    await act(async () => cancelled.resolve(analysis));
+    expect(session.state.analysis).toBeNull();
+
+    act(() => session.saveResume(resume, true));
+    const clearedSignal = api.analyzeResume.mock.calls[1][3] as AbortSignal;
+    act(() => session.clearSession());
+    expect(clearedSignal.aborted).toBe(true);
+    await act(async () => cleared.resolve(analysis));
+    expect(session.state.resume).toBeNull();
+    expect(session.state.analysis).toBeNull();
+  });
+
   it("keeps selection, wording, navigation, and clearing controls in the session boundary", () => {
     act(() => session.selectBullets(["b1"]));
     act(() => session.openSuggestions("b1"));

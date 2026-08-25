@@ -29,6 +29,7 @@ interface Props {
 }
 
 type ResumeSection = Exclude<keyof ResumeDocument, "contact">;
+const maxJobDescriptionLength = 50_000;
 
 function newId(): string {
   return crypto.randomUUID();
@@ -75,7 +76,9 @@ export function ReviewStep({
   const targetError =
     targetCharacterCount < 50
       ? `Enter at least 50 characters before comparison. ${targetCharacterCount} entered.`
-      : null;
+      : targetCharacterCount > maxJobDescriptionLength
+        ? `Use no more than ${maxJobDescriptionLength.toLocaleString()} characters before comparison.`
+        : null;
 
   const validate = (): string[] => {
     const next: string[] = [];
@@ -150,7 +153,10 @@ export function ReviewStep({
             <h3 id="target-description-title">Target job description</h3>
             <p>Update this target before comparison. Your resume and accepted wording stay.</p>
           </div>
-          <span id="target-description-count">{targetCharacterCount} / 50 minimum</span>
+          <span id="target-description-count" aria-live="polite">
+            {targetCharacterCount.toLocaleString()} / 50 minimum ·{" "}
+            {maxJobDescriptionLength.toLocaleString()} maximum
+          </span>
         </div>
         <label className="target-description-field">
           <span className="sr-only">Target job description</span>
@@ -159,7 +165,10 @@ export function ReviewStep({
             rows={7}
             aria-describedby="target-description-help target-description-count"
             aria-invalid={targetError ? true : undefined}
-            onChange={(event) => onJobDescriptionChange(event.target.value)}
+            maxLength={maxJobDescriptionLength}
+            onChange={(event) =>
+              onJobDescriptionChange(event.target.value.slice(0, maxJobDescriptionLength))
+            }
           />
         </label>
         <p id="target-description-help" className="target-description-help">

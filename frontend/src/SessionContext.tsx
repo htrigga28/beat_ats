@@ -46,6 +46,7 @@ interface SessionContextValue {
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
+const maxJobDescriptionLength = 50_000;
 
 function replaceBulletText(
   source: ResumeDocument,
@@ -183,13 +184,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (changed) dispatch({ type: "resumeUpdated", resume });
       if (!shouldAnalyze) return;
       const jobDescription = stateRef.current.jobDescription.trim();
-      if (jobDescription.length < 50) {
+      if (jobDescription.length < 50 || jobDescription.length > maxJobDescriptionLength) {
         dispatch({
           type: "error",
           error: {
-            code: "job_description_too_short",
+            code:
+              jobDescription.length < 50 ? "job_description_too_short" : "job_description_too_long",
             message:
-              "Enter a target job description with at least 50 characters before comparison.",
+              jobDescription.length < 50
+                ? "Enter a target job description with at least 50 characters before comparison."
+                : "Use a target job description with no more than 50,000 characters before comparison.",
             retryable: false,
           },
         });
@@ -307,9 +311,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const updateJobDescription = useCallback(
     (jobDescription: string) => {
-      if (jobDescription === stateRef.current.jobDescription) return;
+      const nextJobDescription = jobDescription.slice(0, maxJobDescriptionLength);
+      if (nextJobDescription === stateRef.current.jobDescription) return;
       invalidateRequest();
-      dispatch({ type: "jobDescriptionUpdated", jobDescription });
+      dispatch({ type: "jobDescriptionUpdated", jobDescription: nextJobDescription });
     },
     [invalidateRequest],
   );
