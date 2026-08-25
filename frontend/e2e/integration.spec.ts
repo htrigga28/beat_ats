@@ -51,6 +51,58 @@ function assertOrdered(paragraphs: string[], values: string[]) {
   }
 }
 
+function nonEmpty(values: Array<string | null | undefined>): string[] {
+  return values.filter((value): value is string => Boolean(value));
+}
+
+function expectedDocxParagraphs(replacements: Map<string, string>): string[] {
+  const { contact, professional_summary: summary } = scenario.resume;
+  const work = scenario.resume.work_experience.flatMap((entry) => {
+    const dates = nonEmpty([entry.start_date, entry.end_date]).join(" - ");
+    return [
+      `${entry.title}\t${entry.employer}`,
+      ...nonEmpty([nonEmpty([entry.location, dates]).join(" | ")]),
+      ...entry.bullets.map((bullet) => replacements.get(bullet.text) ?? bullet.text),
+    ];
+  });
+  const skills = scenario.resume.skills.flatMap((group) =>
+    group.label ? [`${group.label}: ${group.items.join(", ")}`] : [group.items.join(", ")],
+  );
+  const education = scenario.resume.education.flatMap((entry) => [
+    `${entry.credential}${entry.field_of_study ? `, ${entry.field_of_study}` : ""}\t${entry.institution}`,
+    ...nonEmpty([nonEmpty([entry.location, entry.dates]).join(" | ")]),
+    ...entry.details,
+  ]);
+  const projects = scenario.resume.projects.flatMap((entry) => [
+    `${entry.name}\t${entry.role}`,
+    ...nonEmpty([nonEmpty([entry.dates, entry.link]).join(" | ")]),
+    ...entry.bullets.map((bullet) => replacements.get(bullet.text) ?? bullet.text),
+  ]);
+  const additionalSections = scenario.resume.additional_sections.flatMap((section) => [
+    section.title.toUpperCase(),
+    ...section.items,
+  ]);
+
+  return [
+    contact.full_name,
+    ...nonEmpty([nonEmpty([contact.email, contact.phone, contact.location]).join(" | ")]),
+    ...contact.links,
+    "PROFESSIONAL SUMMARY",
+    ...nonEmpty([summary]),
+    "WORK EXPERIENCE",
+    ...work,
+    "SKILLS",
+    ...skills,
+    "EDUCATION",
+    ...education,
+    "CERTIFICATIONS",
+    ...scenario.resume.certifications,
+    "PROJECTS",
+    ...projects,
+    ...additionalSections,
+  ];
+}
+
 test("runs the built SPA, FastAPI, parser, fake Gemini, and retained-Blob repeat download", async ({
   page,
 }, testInfo) => {
@@ -114,22 +166,17 @@ test("runs the built SPA, FastAPI, parser, fake Gemini, and retained-Blob repeat
   expect(facts.paragraphs).not.toContain(workRewrite.original_text);
   expect(facts.paragraphs).toContain(projectRewrite.original_text);
 
+  assertOrdered(
+    facts.paragraphs,
+    expectedDocxParagraphs(new Map([[workRewrite.original_text, workRewrite.accepted_text]])),
+  );
   assertOrdered(facts.paragraphs, [
-    scenario.resume.contact.full_name,
     "PROFESSIONAL SUMMARY",
-    scenario.resume.professional_summary,
     "WORK EXPERIENCE",
-    workRewrite.accepted_text,
-    scenario.resume.work_experience[0].bullets[1].text,
     "SKILLS",
-    "Frontend: React, TypeScript, Accessibility",
     "EDUCATION",
-    scenario.resume.education[0].details[0],
     "CERTIFICATIONS",
-    scenario.resume.certifications[0],
     "PROJECTS",
-    projectRewrite.original_text,
     "COMMUNITY",
-    scenario.resume.additional_sections[0].items[0],
   ]);
 });

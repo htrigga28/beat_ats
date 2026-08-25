@@ -75,14 +75,58 @@ export function AnalysisView({ analysis }: { analysis: GapAnalysis }) {
         </div>
       </div>
       <Accordion type="single" collapsible className="recommendation-disclosure">
-        <AccordionItem value="recommendations">
-          <AccordionTrigger>View recommendations</AccordionTrigger>
+        <AccordionItem value="full-analysis">
+          <AccordionTrigger>View full analysis</AccordionTrigger>
           <AccordionContent>
-            <ul>
-              {analysis.actionable_recommendations.map((recommendation) => (
-                <li key={recommendation}>{recommendation}</li>
-              ))}
-            </ul>
+            <div className="analysis-evidence">
+              <section>
+                <h4>Title alignment</h4>
+                <p>
+                  <strong>Assessment:</strong>{" "}
+                  {analysis.title_alignment.assessment.replaceAll("_", " ")}
+                </p>
+                {analysis.title_alignment.equivalent_title_suggestions.length > 0 ? (
+                  <>
+                    <h5>Equivalent title suggestions</h5>
+                    <ul>
+                      {analysis.title_alignment.equivalent_title_suggestions.map((title) => (
+                        <li key={title}>{title}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p>No equivalent title suggestions were returned.</p>
+                )}
+              </section>
+              <section>
+                <h4>Keyword gaps</h4>
+                {analysis.keyword_gaps.length > 0 ? (
+                  <ul className="analysis-gap-evidence">
+                    {analysis.keyword_gaps.map((gap) => (
+                      <li key={`${gap.term}-${gap.category}`}>
+                        <strong>{gap.term}</strong>
+                        <span>Category: {gap.category.replaceAll("_", " ")}</span>
+                        <span>Importance: {gap.importance}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No material gaps found.</p>
+                )}
+              </section>
+              <section>
+                <h4>Recommendations</h4>
+                {analysis.actionable_recommendations.length > 0 ? (
+                  <ul>
+                    {analysis.actionable_recommendations.map((recommendation) => (
+                      <li key={recommendation}>{recommendation}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No recommendations were returned.</p>
+                )}
+              </section>
+            </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>

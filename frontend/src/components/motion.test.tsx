@@ -1,5 +1,5 @@
 import { gsap } from "gsap";
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalysisView } from "./AnalysisView";
 import { ExportCompletionAcknowledgement } from "./ExportCompletionAcknowledgement";
@@ -76,5 +76,41 @@ describe("motion acknowledgements", () => {
     const rendered = render(<AnalysisView analysis={lowScoreAnalysis} />);
 
     expect(rendered.container.querySelector(".score-orb")).toHaveClass("is-low");
+  });
+
+  it("shows all returned analysis evidence in the keyboard-accessible disclosure", () => {
+    const fullAnalysis: GapAnalysis = {
+      ...analysis,
+      keyword_gaps: [
+        { term: "WCAG", category: "technical_skill", importance: "Required by the role" },
+        {
+          term: "product strategy",
+          category: "domain_experience",
+          importance: "Important responsibility",
+        },
+      ],
+      title_alignment: {
+        ...analysis.title_alignment,
+        assessment: "partial_alignment",
+        equivalent_title_suggestions: ["Senior UI Engineer", "Product Engineer"],
+      },
+      actionable_recommendations: [
+        "Describe accessible delivery outcomes.",
+        "Connect work to product decisions.",
+      ],
+    };
+    const rendered = render(<AnalysisView analysis={fullAnalysis} />);
+
+    fireEvent.click(rendered.getByRole("button", { name: "View full analysis" }));
+
+    expect(rendered.getByText("partial alignment")).toBeVisible();
+    expect(rendered.getByText("Senior UI Engineer")).toBeVisible();
+    expect(rendered.getByText("Product Engineer")).toBeVisible();
+    expect(rendered.getByText("Category: technical skill")).toBeVisible();
+    expect(rendered.getByText("Importance: Required by the role")).toBeVisible();
+    expect(rendered.getByText("Category: domain experience")).toBeVisible();
+    expect(rendered.getByText("Importance: Important responsibility")).toBeVisible();
+    expect(rendered.getByText("Describe accessible delivery outcomes.")).toBeVisible();
+    expect(rendered.getByText("Connect work to product decisions.")).toBeVisible();
   });
 });
