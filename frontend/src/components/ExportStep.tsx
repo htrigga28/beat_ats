@@ -21,7 +21,7 @@ interface Props {
   analysisStale: boolean;
   busy: boolean;
   exportStatus: "idle" | "compiling" | "downloading";
-  hasDownload: boolean;
+  download: Blob | null;
   onTruthChange: (key: keyof TruthConfirmations, checked: boolean) => void;
   onGenerate: () => void;
   onDownloadAgain: () => void;
@@ -48,7 +48,7 @@ export function ExportStep({
   analysisStale,
   busy,
   exportStatus,
-  hasDownload,
+  download,
   onTruthChange,
   onGenerate,
   onDownloadAgain,
@@ -196,9 +196,9 @@ export function ExportStep({
           ) : (
             <span className="export-locked">Complete both truth checks to unlock download.</span>
           )}
-          {exportStatus === "idle" && hasDownload && (
+          {exportStatus === "idle" && download && (
             <>
-              <ExportCompletionAcknowledgement />
+              <ExportCompletionAcknowledgement completion={download} />
               <Button
                 type="button"
                 variant="secondary"

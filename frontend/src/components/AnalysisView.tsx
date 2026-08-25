@@ -1,16 +1,24 @@
 import { gsap } from "gsap";
 import { useLayoutEffect, useRef } from "react";
-import { clearMotionStyles, prefersReducedMotion } from "../motion";
+import { claimMotionAcknowledgement, clearMotionStyles, prefersReducedMotion } from "../motion";
 import type { GapAnalysis } from "../types";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 
 export function AnalysisView({ analysis }: { analysis: GapAnalysis }) {
   const rootRef = useRef<HTMLElement>(null);
+  const acknowledgedAnalysisRef = useRef<GapAnalysis | null>(null);
 
   useLayoutEffect(() => {
     const target = rootRef.current;
     if (!target) return;
 
+    const alreadyAcknowledgedHere = acknowledgedAnalysisRef.current === analysis;
+    acknowledgedAnalysisRef.current = analysis;
+    if (!claimMotionAcknowledgement(analysis) && !alreadyAcknowledgedHere) {
+      clearMotionStyles(target, "opacity,transform");
+      target.dataset.motionState = "settled";
+      return;
+    }
     target.dataset.motionState = "running";
     if (prefersReducedMotion()) {
       clearMotionStyles(target, "opacity,transform");

@@ -1,14 +1,23 @@
 import { CheckCircle2 } from "lucide-react";
 import { gsap } from "gsap";
 import { useLayoutEffect, useRef } from "react";
-import { clearMotionStyles, prefersReducedMotion } from "../motion";
+import { claimMotionAcknowledgement, clearMotionStyles, prefersReducedMotion } from "../motion";
 
-export function ExportCompletionAcknowledgement() {
+export function ExportCompletionAcknowledgement({ completion }: { completion: Blob }) {
   const acknowledgementRef = useRef<HTMLSpanElement>(null);
+  const acknowledgedCompletionRef = useRef<Blob | null>(null);
 
   useLayoutEffect(() => {
     const target = acknowledgementRef.current;
     if (!target) return;
+
+    const alreadyAcknowledgedHere = acknowledgedCompletionRef.current === completion;
+    acknowledgedCompletionRef.current = completion;
+    if (!claimMotionAcknowledgement(completion) && !alreadyAcknowledgedHere) {
+      clearMotionStyles(target, "backgroundColor,boxShadow,opacity,transform");
+      target.dataset.motionState = "settled";
+      return;
+    }
     target.dataset.motionState = "running";
 
     if (prefersReducedMotion()) {
@@ -44,7 +53,7 @@ export function ExportCompletionAcknowledgement() {
       clearMotionStyles(target, "backgroundColor,boxShadow,opacity,transform");
       target.dataset.motionState = "settled";
     };
-  }, []);
+  }, [completion]);
 
   return (
     <span

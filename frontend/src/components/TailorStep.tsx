@@ -76,21 +76,12 @@ export function TailorStep({
 }: Props) {
   const [mobileTab, setMobileTab] = useState("resume");
   const rootRef = useRef<HTMLElement>(null);
-  const appliedAcknowledgementRef = useRef<string | null | undefined>(undefined);
+  const previousAppliedChangesRef = useRef<Record<string, AppliedChange> | undefined>(undefined);
   const rewriteCount = Object.keys(rewritesByBulletId).length;
   const reviewedCount = selectedIds.filter((id) => openedSuggestionIds.includes(id)).length;
   const nextUnreviewedId = selectedIds.find((id) => !openedSuggestionIds.includes(id)) ?? null;
   const allReviewed =
     selectedIds.length === 0 || (rewriteCount > 0 && reviewedCount === selectedIds.length);
-  const latestAppliedChange = useMemo(
-    () =>
-      Object.values(appliedChanges).reduce<AppliedChange | null>(
-        (latest, change) => (!latest || change.appliedAt > latest.appliedAt ? change : latest),
-        null,
-      ),
-    [appliedChanges],
-  );
-
   useEffect(() => {
     if (activeBulletId && rewritesByBulletId[activeBulletId]) {
       onOpen(activeBulletId);
@@ -99,15 +90,27 @@ export function TailorStep({
   }, [activeBulletId, onOpen, rewritesByBulletId]);
 
   useLayoutEffect(() => {
-    const acknowledgementKey = latestAppliedChange
-      ? `${latestAppliedChange.bulletId}:${latestAppliedChange.appliedAt}`
-      : null;
-    if (appliedAcknowledgementRef.current === undefined) {
-      appliedAcknowledgementRef.current = acknowledgementKey;
+    const previousAppliedChanges = previousAppliedChangesRef.current;
+    previousAppliedChangesRef.current = appliedChanges;
+    if (!previousAppliedChanges) {
       return;
     }
-    if (!latestAppliedChange || appliedAcknowledgementRef.current === acknowledgementKey) return;
-    appliedAcknowledgementRef.current = acknowledgementKey;
+
+    const latestAppliedChange = Object.values(appliedChanges)
+      .filter((change) => {
+        const previous = previousAppliedChanges[change.bulletId];
+        return (
+          !previous ||
+          previous.appliedAt !== change.appliedAt ||
+          previous.before !== change.before ||
+          previous.after !== change.after
+        );
+      })
+      .reduce<AppliedChange | null>(
+        (latest, change) => (!latest || change.appliedAt > latest.appliedAt ? change : latest),
+        null,
+      );
+    if (!latestAppliedChange) return;
 
     const targets = Array.from(
       rootRef.current?.querySelectorAll<HTMLElement>("[data-bullet-id]") ?? [],
@@ -153,7 +156,7 @@ export function TailorStep({
         target.dataset.motionState = "settled";
       });
     };
-  }, [latestAppliedChange]);
+  }, [appliedChanges]);
 
   const toggle = (id: string) => {
     if (selectionLocked) return;

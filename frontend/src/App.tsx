@@ -201,7 +201,7 @@ export function Application() {
               analysisStale={state.analysisStale}
               busy={Boolean(state.activeRequest)}
               exportStatus={state.exportStatus}
-              hasDownload={state.docxBlob !== null}
+              download={state.docxBlob}
               onTruthChange={(key, checked) =>
                 dispatch({ type: "truthConfirmation", key, checked })
               }

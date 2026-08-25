@@ -1,5 +1,6 @@
 import { gsap } from "gsap";
 import { fireEvent, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalysisView } from "./AnalysisView";
 import { ExportCompletionAcknowledgement } from "./ExportCompletionAcknowledgement";
@@ -23,7 +24,11 @@ describe("motion acknowledgements", () => {
   });
 
   it("keeps analysis acknowledgement inside its child target and clears it on unmount", () => {
-    const rendered = render(<AnalysisView analysis={analysis} />);
+    const rendered = render(
+      <StrictMode>
+        <AnalysisView analysis={analysis} />
+      </StrictMode>,
+    );
     const target = rendered.container.querySelector<HTMLElement>('[data-motion-ack="analysis"]');
     expect(target).not.toBeNull();
     expect(target?.dataset.motionState).toBe("running");
@@ -37,7 +42,11 @@ describe("motion acknowledgements", () => {
   });
 
   it("acknowledges a completed DOCX and clears the acknowledgement on unmount", () => {
-    const rendered = render(<ExportCompletionAcknowledgement />);
+    const rendered = render(
+      <StrictMode>
+        <ExportCompletionAcknowledgement completion={new Blob(["completed"])} />
+      </StrictMode>,
+    );
     const target = rendered.container.querySelector<HTMLElement>('[data-motion-ack="export"]');
     expect(target).not.toBeNull();
     expect(target?.dataset.motionState).toBe("running");
@@ -61,7 +70,9 @@ describe("motion acknowledgements", () => {
     expect(analysisTarget?.style.transform).toBe("");
     analysisRender.unmount();
 
-    const exportRender = render(<ExportCompletionAcknowledgement />);
+    const exportRender = render(
+      <ExportCompletionAcknowledgement completion={new Blob(["completed"])} />,
+    );
     const exportTarget = exportRender.container.querySelector<HTMLElement>(
       '[data-motion-ack="export"]',
     );
@@ -76,6 +87,44 @@ describe("motion acknowledgements", () => {
     const rendered = render(<AnalysisView analysis={lowScoreAnalysis} />);
 
     expect(rendered.container.querySelector(".score-orb")).toHaveClass("is-low");
+  });
+
+  it("does not replay an analysis acknowledgement after a same-state back-navigation remount", () => {
+    const completedAnalysis = { ...analysis };
+    const firstRender = render(<AnalysisView analysis={completedAnalysis} />);
+    expect(
+      firstRender.container.querySelector<HTMLElement>('[data-motion-ack="analysis"]')?.dataset
+        .motionState,
+    ).toBe("running");
+    firstRender.unmount();
+
+    const remounted = render(<AnalysisView analysis={completedAnalysis} />);
+    const target = remounted.container.querySelector<HTMLElement>('[data-motion-ack="analysis"]');
+    expect(target?.dataset.motionState).toBe("settled");
+    expect(gsap.getTweensOf(target!)).toHaveLength(0);
+
+    remounted.rerender(<AnalysisView analysis={{ ...completedAnalysis, match_score: 73 }} />);
+    expect(target?.dataset.motionState).toBe("running");
+  });
+
+  it("does not replay a DOCX acknowledgement after a same-state back-navigation remount", () => {
+    const completion = new Blob(["completed"]);
+    const firstRender = render(<ExportCompletionAcknowledgement completion={completion} />);
+    expect(
+      firstRender.container.querySelector<HTMLElement>('[data-motion-ack="export"]')?.dataset
+        .motionState,
+    ).toBe("running");
+    firstRender.unmount();
+
+    const remounted = render(<ExportCompletionAcknowledgement completion={completion} />);
+    const target = remounted.container.querySelector<HTMLElement>('[data-motion-ack="export"]');
+    expect(target?.dataset.motionState).toBe("settled");
+    expect(gsap.getTweensOf(target!)).toHaveLength(0);
+
+    remounted.rerender(
+      <ExportCompletionAcknowledgement completion={new Blob(["new completion"])} />,
+    );
+    expect(target?.dataset.motionState).toBe("running");
   });
 
   it("shows all returned analysis evidence in the keyboard-accessible disclosure", () => {
