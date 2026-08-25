@@ -20,7 +20,7 @@ import {
   type ReactNode,
 } from "react";
 import emptyStateIllustration from "../assets/tailoring-empty-state.png";
-import { clearMotionStyles, prefersReducedMotion } from "../motion";
+import { claimMotionAcknowledgement, clearMotionStyles, prefersReducedMotion } from "../motion";
 import type {
   AppliedChange,
   BulletRewriteResult,
@@ -76,7 +76,7 @@ export function TailorStep({
 }: Props) {
   const [mobileTab, setMobileTab] = useState("resume");
   const rootRef = useRef<HTMLElement>(null);
-  const previousAppliedChangesRef = useRef<Record<string, AppliedChange> | undefined>(undefined);
+  const appliedAcknowledgementsInitializedRef = useRef(false);
   const rewriteCount = Object.keys(rewritesByBulletId).length;
   const reviewedCount = selectedIds.filter((id) => openedSuggestionIds.includes(id)).length;
   const nextUnreviewedId = selectedIds.find((id) => !openedSuggestionIds.includes(id)) ?? null;
@@ -90,22 +90,15 @@ export function TailorStep({
   }, [activeBulletId, onOpen, rewritesByBulletId]);
 
   useLayoutEffect(() => {
-    const previousAppliedChanges = previousAppliedChangesRef.current;
-    previousAppliedChangesRef.current = appliedChanges;
-    if (!previousAppliedChanges) {
+    const changes = Object.values(appliedChanges);
+    if (!appliedAcknowledgementsInitializedRef.current) {
+      changes.forEach(claimMotionAcknowledgement);
+      appliedAcknowledgementsInitializedRef.current = true;
       return;
     }
 
-    const latestAppliedChange = Object.values(appliedChanges)
-      .filter((change) => {
-        const previous = previousAppliedChanges[change.bulletId];
-        return (
-          !previous ||
-          previous.appliedAt !== change.appliedAt ||
-          previous.before !== change.before ||
-          previous.after !== change.after
-        );
-      })
+    const latestAppliedChange = changes
+      .filter(claimMotionAcknowledgement)
       .reduce<AppliedChange | null>(
         (latest, change) => (!latest || change.appliedAt > latest.appliedAt ? change : latest),
         null,
