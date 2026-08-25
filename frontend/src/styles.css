@@ -785,6 +785,82 @@ svg {
 .review-intro {
   margin-bottom: 24px;
 }
+.target-description-panel {
+  margin-bottom: 22px;
+  padding: 20px;
+  border: 1px solid var(--slate-200);
+  border-radius: 12px;
+  background: white;
+}
+.target-description-heading {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.target-description-heading > div {
+  min-width: 0;
+}
+.target-description-heading h3 {
+  margin: 0;
+  color: var(--slate-900);
+  font-size: 16px;
+  line-height: 1.35;
+}
+.target-description-heading p,
+.target-description-help,
+.target-description-error,
+.target-description-stale {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.target-description-heading p,
+.target-description-help {
+  color: var(--slate-600);
+}
+.target-description-heading > span {
+  flex: none;
+  color: var(--slate-700);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.target-description-field {
+  display: block;
+}
+.target-description-field textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 6px;
+  background: var(--slate-50);
+  color: var(--slate-900);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.target-description-field textarea:focus-visible {
+  border-color: var(--indigo-600);
+  outline: 2px solid var(--indigo-600);
+  outline-offset: 2px;
+}
+.target-description-field textarea[aria-invalid="true"] {
+  border-color: var(--red-600);
+}
+.target-description-error {
+  color: var(--red-700);
+}
+.target-description-stale {
+  padding-top: 12px;
+  border-top: 1px solid var(--amber-100);
+  color: var(--amber-700);
+}
 .warning-stack {
   position: sticky;
   top: 10px;
@@ -2150,6 +2226,13 @@ svg {
   }
   .resume-contact-block {
     padding: 26px 18px 20px;
+  }
+  .target-description-panel {
+    padding: 16px;
+  }
+  .target-description-heading {
+    flex-direction: column;
+    gap: 8px;
   }
   .resume-sections {
     padding: 0 18px 20px;

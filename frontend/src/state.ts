@@ -48,6 +48,7 @@ export type Action =
   | { type: "errorCleared" }
   | { type: "ingested"; resume: ResumeDocument; jobDescription: string; warnings: string[] }
   | { type: "resumeUpdated"; resume: ResumeDocument }
+  | { type: "jobDescriptionUpdated"; jobDescription: string }
   | { type: "analysisLoaded"; analysis: GapAnalysis; advance?: boolean }
   | { type: "warningDismissed"; warning: string }
   | { type: "selected"; ids: string[] }
@@ -64,6 +65,30 @@ export type Action =
   | { type: "step"; step: Step }
   | { type: "clear" };
 
+function invalidateDependents(
+  state: WorkflowState,
+  updates: Pick<WorkflowState, "resume" | "jobDescription" | "appliedChanges">,
+): WorkflowState {
+  const { resume, jobDescription, appliedChanges } = updates;
+  return {
+    ...state,
+    resume,
+    jobDescription,
+    analysisStale: state.analysis !== null,
+    selectedBulletIds: [],
+    activeBulletId: null,
+    selectionLocked: false,
+    rewritesByBulletId: {},
+    openedSuggestionIds: [],
+    appliedChanges,
+    truthConfirmations: unchecked,
+    docxBlob: null,
+    exportStatus: "idle",
+    activeRequest: null,
+    error: null,
+  };
+}
+
 function invalidateResumeDependents(state: WorkflowState, resume: ResumeDocument): WorkflowState {
   const currentBulletText = new Map(
     [...resume.work_experience, ...resume.projects].flatMap((entry) =>
@@ -75,21 +100,11 @@ function invalidateResumeDependents(state: WorkflowState, resume: ResumeDocument
       ([bulletId, change]) => currentBulletText.get(bulletId) === change.after,
     ),
   );
-  return {
-    ...state,
+  return invalidateDependents(state, {
     resume,
-    analysisStale: state.analysis !== null,
-    selectedBulletIds: [],
-    activeBulletId: null,
-    selectionLocked: false,
-    rewritesByBulletId: {},
-    openedSuggestionIds: [],
+    jobDescription: state.jobDescription,
     appliedChanges,
-    truthConfirmations: unchecked,
-    docxBlob: null,
-    exportStatus: "idle",
-    error: null,
-  };
+  });
 }
 
 export function reducer(state: WorkflowState, action: Action): WorkflowState {
@@ -120,6 +135,12 @@ export function reducer(state: WorkflowState, action: Action): WorkflowState {
       };
     case "resumeUpdated":
       return invalidateResumeDependents(state, structuredClone(action.resume));
+    case "jobDescriptionUpdated":
+      return invalidateDependents(state, {
+        resume: state.resume,
+        jobDescription: action.jobDescription,
+        appliedChanges: state.appliedChanges,
+      });
     case "analysisLoaded":
       return {
         ...state,

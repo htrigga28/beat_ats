@@ -18,9 +18,12 @@ import { Button } from "./ui/button";
 interface Props {
   resume: ResumeDocument;
   original?: ResumeDocument;
+  jobDescription: string;
+  analysisStale: boolean;
   warnings: string[];
   busy: boolean;
   onSave: (resume: ResumeDocument, analyze: boolean) => void;
+  onJobDescriptionChange: (jobDescription: string) => void;
   onDismissWarning?: (warning: string) => void;
   onBackConfirmed?: () => void;
 }
@@ -38,9 +41,12 @@ function compact(values: string[]): string[] {
 export function ReviewStep({
   resume: sourceResume,
   original = sourceResume,
+  jobDescription,
+  analysisStale,
   warnings,
   busy,
   onSave,
+  onJobDescriptionChange,
   onDismissWarning,
   onBackConfirmed,
 }: Props) {
@@ -65,6 +71,11 @@ export function ReviewStep({
 
   const changed = (section: keyof ResumeDocument) =>
     JSON.stringify(resume[section]) !== JSON.stringify(original[section]);
+  const targetCharacterCount = jobDescription.trim().length;
+  const targetError =
+    targetCharacterCount < 50
+      ? `Enter at least 50 characters before comparison. ${targetCharacterCount} entered.`
+      : null;
 
   const validate = (): string[] => {
     const next: string[] = [];
@@ -95,7 +106,7 @@ export function ReviewStep({
   };
 
   const requestComparison = () => {
-    const next = validate();
+    const next = [...(targetError ? [targetError] : []), ...validate()];
     setErrors(next);
     if (next.length === 0) onSave(resume, true);
   };
@@ -132,6 +143,39 @@ export function ReviewStep({
           mistakes before requesting advisory analysis.
         </p>
       </div>
+
+      <section className="target-description-panel" aria-labelledby="target-description-title">
+        <div className="target-description-heading">
+          <div>
+            <h3 id="target-description-title">Target job description</h3>
+            <p>Update this target before comparison. Your resume and accepted wording stay.</p>
+          </div>
+          <span id="target-description-count">
+            {targetCharacterCount} / 50 minimum
+          </span>
+        </div>
+        <label className="target-description-field">
+          <span className="sr-only">Target job description</span>
+          <textarea
+            value={jobDescription}
+            rows={7}
+            aria-describedby="target-description-help target-description-count"
+            aria-invalid={targetError ? true : undefined}
+            onChange={(event) => onJobDescriptionChange(event.target.value)}
+          />
+        </label>
+        <p id="target-description-help" className="target-description-help">
+          A change clears generated suggestions, confirmations, and the Word file. Previous
+          comparison results remain marked out of date until you request a new comparison.
+        </p>
+        {targetError && <p className="target-description-error">{targetError}</p>}
+        {analysisStale && (
+          <p className="target-description-stale" role="status">
+            The previous advisory comparison is out of date. Request a new comparison before you
+            use it.
+          </p>
+        )}
+      </section>
 
       {errors.length > 0 && (
         <div className="field-errors" role="alert">

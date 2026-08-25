@@ -28,6 +28,7 @@ function Application() {
     retry,
     uploadResume,
     saveResume,
+    updateJobDescription,
     requestRewrites,
     selectBullets,
     openSuggestions,
@@ -154,11 +155,14 @@ function Application() {
           <ReviewStep
             resume={state.resume}
             original={state.originalResume}
+            jobDescription={state.jobDescription}
+            analysisStale={state.analysisStale}
             warnings={state.warnings.filter(
               (warning) => !state.dismissedWarnings.includes(warning),
             )}
             busy={Boolean(state.activeRequest)}
             onSave={saveResume}
+            onJobDescriptionChange={updateJobDescription}
             onDismissWarning={(warning) => dispatch({ type: "warningDismissed", warning })}
             onBackConfirmed={clearSession}
           />

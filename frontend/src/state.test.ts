@@ -128,6 +128,48 @@ describe("session reducer", () => {
     expect(state.docxBlob).toBeNull();
   });
 
+  it("keeps accepted wording but clears target-derived state after a target update", () => {
+    let state: WorkflowState = {
+      ...reducer(ingestedState(), { type: "analysisLoaded", analysis }),
+      selectedBulletIds: ["b1"],
+      activeBulletId: "b1",
+      selectionLocked: true,
+      rewritesByBulletId: {
+        b1: { bullet_id: "b1", original_text: "Built a thing", alternatives: [] },
+      },
+      openedSuggestionIds: ["b1"],
+      appliedChanges: {
+        b1: {
+          bulletId: "b1",
+          source: "ai",
+          before: "Built a thing",
+          after: "Built a better thing",
+          appliedAt: 1,
+        },
+      },
+      truthConfirmations: { factual: true, advisory: true },
+      docxBlob: new Blob(["docx"]),
+      exportStatus: "downloading",
+    };
+    const currentResume = state.resume;
+    state = reducer(state, {
+      type: "jobDescriptionUpdated",
+      jobDescription: "A different sufficiently detailed target job description for testing.",
+    });
+
+    expect(state.resume).toBe(currentResume);
+    expect(state.analysis).toEqual(analysis);
+    expect(state.analysisStale).toBe(true);
+    expect(state.appliedChanges.b1?.after).toBe("Built a better thing");
+    expect(state.selectedBulletIds).toEqual([]);
+    expect(state.activeBulletId).toBeNull();
+    expect(state.rewritesByBulletId).toEqual({});
+    expect(state.openedSuggestionIds).toEqual([]);
+    expect(state.truthConfirmations).toEqual({ factual: false, advisory: false });
+    expect(state.docxBlob).toBeNull();
+    expect(state.exportStatus).toBe("idle");
+  });
+
   it("keeps only AI change records whose applied wording still exists after review edits", () => {
     const appliedResume = structuredClone(resume);
     appliedResume.work_experience[0].bullets[0].text = "Built a better thing";

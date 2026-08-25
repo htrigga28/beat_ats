@@ -30,6 +30,7 @@ interface SessionContextValue {
     visionConsent: boolean,
   ) => void;
   saveResume: (resume: ResumeDocument, shouldAnalyze: boolean) => void;
+  updateJobDescription: (jobDescription: string) => void;
   requestRewrites: (ids: string[]) => void;
   selectBullets: (ids: string[]) => void;
   openSuggestions: (id: string) => void;
@@ -93,8 +94,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const retryRef = useRef<(() => void) | null>(null);
   stateRef.current = state;
 
+  const invalidateRequest = useCallback(() => {
+    requestRef.current?.controller.abort();
+    requestRef.current = null;
+    nextRequestId.current += 1;
+    retryRef.current = null;
+  }, []);
+
   const run = useCallback(
-    async <T,>(label: string, task: (signal: AbortSignal) => Promise<T>, retry?: () => void) => {
+    async <T,>(
+      label: string,
+      task: (signal: AbortSignal) => Promise<T>,
+      onSuccess: (result: T) => void,
+      retry?: () => void,
+    ) => {
       requestRef.current?.controller.abort();
       const controller = new AbortController();
       const id = ++nextRequestId.current;
@@ -102,15 +115,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       retryRef.current = retry ?? null;
       dispatch({ type: "requestStarted", label });
       try {
-        return await task(controller.signal);
+        const result = await task(controller.signal);
+        if (requestRef.current?.id !== id || controller.signal.aborted) return;
+        onSuccess(result);
       } catch (error) {
-        if (controller.signal.aborted) return undefined;
+        if (requestRef.current?.id !== id || controller.signal.aborted) return;
         const normalized =
           error && typeof error === "object" && "code" in error
             ? (error as NormalizedError)
             : normalizeError(error);
         dispatch({ type: "error", error: normalized });
-        return undefined;
       } finally {
         if (requestRef.current?.id === id) {
           requestRef.current = null;
@@ -122,12 +136,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    void run("Loading deployment settings", (signal) =>
-      getConfig(signal).then((config) => {
-        dispatch({ type: "configLoaded", config });
-        return config;
-      }),
-    );
+    void run("Loading deployment settings", getConfig, (config) => {
+      dispatch({ type: "configLoaded", config });
+    });
     return () => requestRef.current?.controller.abort();
   }, [run]);
 
@@ -150,15 +161,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               },
             },
             signal,
-          ).then((result) => {
-            dispatch({
-              type: "ingested",
-              resume: result.resume,
-              jobDescription: jobDescription.trim(),
-              warnings: result.warnings ?? [],
-            });
-            return result;
-          }),
+          ),
+        (result) => {
+          dispatch({
+            type: "ingested",
+            resume: result.resume,
+            jobDescription: jobDescription.trim(),
+            warnings: result.warnings ?? [],
+          });
+        },
         retry,
       );
     },
@@ -168,20 +179,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const saveResume = useCallback(
     (resume: ResumeDocument, shouldAnalyze: boolean) => {
       const changed = JSON.stringify(resume) !== JSON.stringify(stateRef.current.resume);
+      if (changed) invalidateRequest();
       if (changed) dispatch({ type: "resumeUpdated", resume });
       if (!shouldAnalyze) return;
+      const jobDescription = stateRef.current.jobDescription.trim();
+      if (jobDescription.length < 50) {
+        dispatch({
+          type: "error",
+          error: {
+            code: "job_description_too_short",
+            message: "Enter a target job description with at least 50 characters before comparison.",
+            retryable: false,
+          },
+        });
+        return;
+      }
       const retry = () => saveResume(resume, true);
       void run(
         "Comparing resume evidence",
-        (signal) =>
-          analyzeResume(resume, stateRef.current.jobDescription, true, signal).then((analysis) => {
-            dispatch({ type: "analysisLoaded", analysis });
-            return analysis;
-          }),
+        (signal) => analyzeResume(resume, jobDescription, true, signal),
+        (analysis) => dispatch({ type: "analysisLoaded", analysis }),
         retry,
       );
     },
-    [run],
+    [invalidateRequest, run],
   );
 
   const requestRewrites = useCallback(
@@ -192,13 +213,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const retry = () => requestRewrites(ids);
       void run(
         "Drafting alternatives",
-        (signal) =>
-          rewriteBullets(snapshot.resume!, snapshot.jobDescription, ids, true, signal).then(
-            (rewrites) => {
-              dispatch({ type: "rewritesLoaded", rewrites });
-              return rewrites;
-            },
-          ),
+        (signal) => rewriteBullets(snapshot.resume!, snapshot.jobDescription, ids, true, signal),
+        (rewrites) => dispatch({ type: "rewritesLoaded", rewrites }),
         retry,
       );
     },
@@ -221,9 +237,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         after: text.trim(),
         appliedAt: Date.now(),
       };
+      invalidateRequest();
       dispatch({ type: "suggestionApplied", resume, change });
     }
-  }, []);
+  }, [invalidateRequest]);
 
   const selectBullets = useCallback((ids: string[]) => dispatch({ type: "selected", ids }), []);
   const openSuggestions = useCallback(
@@ -243,8 +260,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       findBulletText(snapshot.originalResume, bulletId);
     if (!originalText) return;
     const resume = replaceBulletText(snapshot.resume, { [bulletId]: originalText });
+    invalidateRequest();
     dispatch({ type: "bulletRestored", resume, bulletId });
-  }, []);
+  }, [invalidateRequest]);
 
   const reanalyze = useCallback(() => {
     const snapshot = stateRef.current;
@@ -252,11 +270,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const retry = () => reanalyze();
     void run(
       "Refreshing advisory analysis",
-      (signal) =>
-        analyzeResume(snapshot.resume!, snapshot.jobDescription, true, signal).then((analysis) => {
-          dispatch({ type: "analysisLoaded", analysis, advance: false });
-          return analysis;
-        }),
+      (signal) => analyzeResume(snapshot.resume!, snapshot.jobDescription, true, signal),
+      (analysis) => dispatch({ type: "analysisLoaded", analysis, advance: false }),
       retry,
     );
   }, [run]);
@@ -268,13 +283,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "docxCompilationStarted" });
     void run(
       "Building Word document",
-      (signal) =>
-        generateDocx(snapshot.resume!, signal).then((blob) => {
-          dispatch({ type: "docxLoaded", blob });
-          downloadDocxBlob(blob);
-          dispatch({ type: "docxDownloadFinished" });
-          return blob;
-        }),
+      (signal) => generateDocx(snapshot.resume!, signal),
+      (blob) => {
+        dispatch({ type: "docxLoaded", blob });
+        downloadDocxBlob(blob);
+        dispatch({ type: "docxDownloadFinished" });
+      },
       retry,
     );
   }, [run]);
@@ -284,13 +298,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (blob) downloadDocxBlob(blob);
   }, []);
 
+  const updateJobDescription = useCallback(
+    (jobDescription: string) => {
+      if (jobDescription === stateRef.current.jobDescription) return;
+      invalidateRequest();
+      dispatch({ type: "jobDescriptionUpdated", jobDescription });
+    },
+    [invalidateRequest],
+  );
   const clearSession = useCallback(() => {
-    requestRef.current?.controller.abort();
-    retryRef.current = null;
+    invalidateRequest();
     dispatch({ type: "clear" });
-  }, []);
+  }, [invalidateRequest]);
 
-  const cancelActiveRequest = useCallback(() => requestRef.current?.controller.abort(), []);
+  const cancelActiveRequest = useCallback(() => {
+    invalidateRequest();
+    dispatch({ type: "requestFinished" });
+  }, [invalidateRequest]);
   const setStep = useCallback((step: Step) => dispatch({ type: "step", step }), []);
 
   const value = useMemo<SessionContextValue>(
@@ -300,6 +324,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       retry: retryRef.current,
       uploadResume,
       saveResume,
+      updateJobDescription,
       requestRewrites,
       selectBullets,
       openSuggestions,
@@ -317,6 +342,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       state,
       uploadResume,
       saveResume,
+      updateJobDescription,
       requestRewrites,
       selectBullets,
       openSuggestions,

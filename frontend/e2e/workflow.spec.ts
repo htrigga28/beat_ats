@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { completeUpload, mockApi, reachTailor, resume } from "./fixtures";
+import { analysis, completeUpload, mockApi, reachTailor, resume } from "./fixtures";
 
 test("completes the controlled desktop workflow and downloads DOCX", async ({ page }) => {
   await mockApi(page);
@@ -107,6 +107,50 @@ test("keeps analysis failures in Review with a retry action", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Verify what was extracted" })).toBeVisible();
   await expect(page.getByText("Analysis is unavailable.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+});
+
+test("ignores an analysis result that completes after the target changes", async ({ page }) => {
+  await mockApi(page);
+  let releaseFirstAnalysis!: () => void;
+  const firstAnalysis = new Promise<void>((resolve) => {
+    releaseFirstAnalysis = resolve;
+  });
+  const requestedTargets: string[] = [];
+  let callCount = 0;
+  await page.route("**/api/v1/analyses", async (route) => {
+    requestedTargets.push(
+      (route.request().postDataJSON() as { job_description: string }).job_description,
+    );
+    callCount += 1;
+    if (callCount === 1) {
+      await firstAnalysis;
+      await route.fulfill({ json: analysis }).catch(() => undefined);
+      return;
+    }
+    await route.fulfill({ json: analysis });
+  });
+
+  await page.goto("/");
+  await completeUpload(page);
+  await page.setViewportSize({ width: 320, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.getByRole("button", { name: /Request advisory comparison/ }).click();
+  await expect.poll(() => requestedTargets).toHaveLength(1);
+
+  const target = page.getByRole("textbox", { name: "Target job description" });
+  const updatedTarget =
+    "A new frontend engineering role requires React, TypeScript, accessibility, and delivery.";
+  await target.fill(updatedTarget);
+  releaseFirstAnalysis();
+
+  await expect(page.getByRole("heading", { name: "Verify what was extracted" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tailor the wording, preserve the truth" })).toHaveCount(
+    0,
+  );
+
+  await page.getByRole("button", { name: /Request advisory comparison/ }).click();
+  await expect.poll(() => requestedTargets).toEqual([expect.any(String), updatedTarget]);
+  await expect(page.getByRole("heading", { name: "Tailor the wording, preserve the truth" })).toBeVisible();
 });
 
 test("enforces the ten-bullet cap and preserves state across back navigation", async ({ page }) => {

@@ -40,8 +40,8 @@ The application is a linear, four-stage workflow:
 
 1. **Upload** — provide a resume and target job description, then grant the required AI
    processing consent.
-2. **Review** — inspect and edit the structured resume, then request an advisory
-   comparison.
+2. **Review** — inspect and edit the structured resume and the target job description,
+   then request an advisory comparison.
 3. **Tailor** — select up to ten work-experience bullets, review AI alternatives, and
    explicitly apply chosen wording.
 4. **Export** — perform a final truth check, generate an ATS-safe DOCX, and download it.
@@ -118,6 +118,11 @@ If an analyzed resume is edited and saved, the interface marks the existing anal
 stale. Saving also clears previously generated rewrites and any generated DOCX because
 those outputs no longer correspond to the current resume.
 
+The user can also edit the target job description in Review without uploading the resume
+again. A target change keeps the verified resume and accepted wording. It marks a prior
+comparison as out of date and clears generated suggestions, truth confirmations, and any
+generated DOCX. The user must request a new comparison before they use the prior result.
+
 ### 4. Resume-to-role analysis
 
 The user can request an evidence-based comparison between the verified resume and the
@@ -138,8 +143,8 @@ The scoring rubric used by the AI is fixed in the backend prompt:
 - Domain, soft skills, and education: 15%.
 
 The interface explicitly states that the result is an advisory estimate rather than a
-score from a named ATS provider. If the underlying resume changes, the interface warns
-that the previous analysis should be re-run before it is relied on.
+score from a named ATS provider. If the resume or target job description changes, the
+interface warns that the previous analysis should be run again before it is used.
 
 ### 5. Evidence-constrained bullet tailoring
 
@@ -203,8 +208,10 @@ request metadata includes a request ID, method, path, and response status.
 ### 8. Loading, errors, and recovery
 
 Only one application request is treated as active at a time. Beginning a new request
-cancels the prior one. The UI provides contextual status messages for configuration
-loading, extraction, analysis, rewrite generation, and DOCX generation.
+cancels the prior one. Editing a resume or target job description, cancelling work, or
+clearing the session also cancels active work. The application ignores a late result from
+the earlier request. The UI provides contextual status messages for configuration loading,
+extraction, analysis, rewrite generation, and DOCX generation.
 
 Errors are normalized into a user-facing message with:
 
@@ -233,7 +240,7 @@ failure.
 | Stage | Primary content | Primary action | Secondary actions |
 | --- | --- | --- | --- |
 | Upload | File, job description, privacy note, runtime limits, consent | Extract resume | None |
-| Review | Extraction warnings, structured resume editor, analysis result | Save & analyze | Save edits; continue after analysis |
+| Review | Extraction warnings, target job description, structured resume editor, analysis result | Request advisory comparison | Save edits; continue after analysis |
 | Tailor | Selectable source bullets, generated alternatives | Generate alternatives / apply choices | Back to Review; continue without more rewrites |
 | Export | Change summary, truth warning, preview | Generate Word file / download | Re-run stale analysis; back to Tailor |
 
@@ -249,6 +256,8 @@ states:
   required.
 - Long populated resume with repeated roles, bullets, education, and projects.
 - Unsaved editor changes, saved changes, and invalid required fields.
+- Editable target job description with a 50-character minimum, an out-of-date comparison,
+  and cleared dependent output.
 - Analysis absent, loading, available, stale, empty-gap, or failed.
 - No bullets selected, one to ten selected, and selection limit reached.
 - Rewrite generation in progress, alternatives available, choices selected, and choices
@@ -267,8 +276,8 @@ behavior:
   cross-device continuation.
 - The app handles one resume and one job description per session.
 - The workflow stage register is informational and cannot be used for navigation.
-- The target job description cannot be reviewed or edited after successful ingestion
-  without starting a new session.
+- The app handles one target job description at a time. Changing it in Review clears
+  target-derived output and requires a new advisory comparison.
 - The resume editor can remove some repeated records but has no controls to add roles,
   bullets, skill groups, education entries, projects, or project bullets.
 - Additional resume sections are supported by extraction and DOCX generation but are
