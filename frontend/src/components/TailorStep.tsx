@@ -9,8 +9,18 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { gsap } from "gsap";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import emptyStateIllustration from "../assets/tailoring-empty-state.png";
+import { clearMotionStyles, prefersReducedMotion } from "../motion";
 import type {
   AppliedChange,
   BulletRewriteResult,
@@ -18,10 +28,10 @@ import type {
   ResumeDocument,
   RewriteAlternative,
 } from "../types";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { AnalysisView } from "./AnalysisView";
 
 interface Props {
   resume: ResumeDocument;
@@ -64,13 +74,22 @@ export function TailorStep({
   onBack,
   onContinue,
 }: Props) {
-  const [glowingBullet, setGlowingBullet] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState("resume");
+  const rootRef = useRef<HTMLElement>(null);
+  const appliedAcknowledgementRef = useRef<string | null | undefined>(undefined);
   const rewriteCount = Object.keys(rewritesByBulletId).length;
   const reviewedCount = selectedIds.filter((id) => openedSuggestionIds.includes(id)).length;
   const nextUnreviewedId = selectedIds.find((id) => !openedSuggestionIds.includes(id)) ?? null;
   const allReviewed =
     selectedIds.length === 0 || (rewriteCount > 0 && reviewedCount === selectedIds.length);
+  const latestAppliedChange = useMemo(
+    () =>
+      Object.values(appliedChanges).reduce<AppliedChange | null>(
+        (latest, change) => (!latest || change.appliedAt > latest.appliedAt ? change : latest),
+        null,
+      ),
+    [appliedChanges],
+  );
 
   useEffect(() => {
     if (activeBulletId && rewritesByBulletId[activeBulletId]) {
@@ -78,6 +97,63 @@ export function TailorStep({
       setMobileTab("suggestions");
     }
   }, [activeBulletId, onOpen, rewritesByBulletId]);
+
+  useLayoutEffect(() => {
+    const acknowledgementKey = latestAppliedChange
+      ? `${latestAppliedChange.bulletId}:${latestAppliedChange.appliedAt}`
+      : null;
+    if (appliedAcknowledgementRef.current === undefined) {
+      appliedAcknowledgementRef.current = acknowledgementKey;
+      return;
+    }
+    if (!latestAppliedChange || appliedAcknowledgementRef.current === acknowledgementKey) return;
+    appliedAcknowledgementRef.current = acknowledgementKey;
+
+    const targets = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>("[data-bullet-id]") ?? [],
+    ).filter((target) => target.dataset.bulletId === latestAppliedChange.bulletId);
+    if (targets.length === 0) return;
+    targets.forEach((target) => {
+      target.dataset.motionState = "running";
+    });
+    if (prefersReducedMotion()) {
+      clearMotionStyles(targets, "backgroundColor,boxShadow,opacity,transform");
+      targets.forEach((target) => {
+        target.dataset.motionState = "settled";
+      });
+      return;
+    }
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        targets,
+        {
+          backgroundColor: "rgba(236, 253, 245, 0.85)",
+          boxShadow: "0 0 0 3px rgba(167, 243, 208, 0.72)",
+        },
+        {
+          backgroundColor: "rgba(236, 253, 245, 0)",
+          boxShadow: "0 0 0 0 rgba(167, 243, 208, 0)",
+          duration: 0.22,
+          ease: "power2.out",
+          clearProps: "backgroundColor,boxShadow",
+          onComplete: () => {
+            targets.forEach((target) => {
+              target.dataset.motionState = "settled";
+            });
+          },
+        },
+      );
+    }, rootRef);
+
+    return () => {
+      context.revert();
+      clearMotionStyles(targets, "backgroundColor,boxShadow,opacity,transform");
+      targets.forEach((target) => {
+        target.dataset.motionState = "settled";
+      });
+    };
+  }, [latestAppliedChange]);
 
   const toggle = (id: string) => {
     if (selectionLocked) return;
@@ -87,8 +163,6 @@ export function TailorStep({
 
   const apply = (bulletId: string, text: string) => {
     onApply(bulletId, text);
-    setGlowingBullet(bulletId);
-    window.setTimeout(() => setGlowingBullet(null), 1000);
   };
 
   const openBullet = (id: string) => {
@@ -105,7 +179,6 @@ export function TailorStep({
       openedSuggestionIds={openedSuggestionIds}
       rewrites={rewritesByBulletId}
       appliedChanges={appliedChanges}
-      glowingBullet={glowingBullet}
       busy={busy}
       onToggle={toggle}
       onOpen={openBullet}
@@ -122,7 +195,7 @@ export function TailorStep({
   );
 
   return (
-    <section className="stage-enter tailor-stage" aria-labelledby="tailor-title">
+    <section ref={rootRef} className="tailor-stage" aria-labelledby="tailor-title">
       <div className="stage-intro tailor-intro">
         <span className="stage-kicker">Stage 3 · Advisory tailoring</span>
         <h2 id="tailor-title">Tailor the wording, preserve the truth</h2>
@@ -132,7 +205,7 @@ export function TailorStep({
         </p>
       </div>
 
-      <AnalysisSummary analysis={analysis} />
+      <AnalysisView analysis={analysis} />
       <details className="job-description-disclosure">
         <summary>Review target job description</summary>
         <p>{jobDescription}</p>
@@ -228,49 +301,6 @@ export function TailorStep({
   );
 }
 
-function AnalysisSummary({ analysis }: { analysis: GapAnalysis }) {
-  const scoreClass =
-    analysis.match_score >= 80 ? "is-high" : analysis.match_score >= 60 ? "is-medium" : "is-low";
-  return (
-    <section className="analysis-summary" aria-labelledby="analysis-summary-title">
-      <div className={`score-orb ${scoreClass}`}>
-        <strong>{analysis.match_score}</strong>
-        <span>Advisory score</span>
-      </div>
-      <div className="analysis-summary-copy">
-        <span className="stage-kicker">Comparison snapshot</span>
-        <h3 id="analysis-summary-title">{analysis.title_alignment.target_title}</h3>
-        <p>{analysis.title_alignment.rationale}</p>
-      </div>
-      <div className="gap-preview">
-        <span>Important gaps</span>
-        <div>
-          {analysis.keyword_gaps.slice(0, 4).map((gap) => (
-            <span className="gap-chip" key={gap.term} title={gap.importance}>
-              {gap.term}
-            </span>
-          ))}
-          {analysis.keyword_gaps.length === 0 && (
-            <span className="no-gaps">No material gaps found</span>
-          )}
-        </div>
-      </div>
-      <Accordion type="single" collapsible className="recommendation-disclosure">
-        <AccordionItem value="recommendations">
-          <AccordionTrigger>View recommendations</AccordionTrigger>
-          <AccordionContent>
-            <ul>
-              {analysis.actionable_recommendations.map((recommendation) => (
-                <li key={recommendation}>{recommendation}</li>
-              ))}
-            </ul>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </section>
-  );
-}
-
 function ResumeSelectionPane({
   resume,
   selectedIds,
@@ -279,7 +309,6 @@ function ResumeSelectionPane({
   openedSuggestionIds,
   rewrites,
   appliedChanges,
-  glowingBullet,
   busy,
   onToggle,
   onOpen,
@@ -292,7 +321,6 @@ function ResumeSelectionPane({
   openedSuggestionIds: string[];
   rewrites: Record<string, BulletRewriteResult>;
   appliedChanges: Record<string, AppliedChange>;
-  glowingBullet: string | null;
   busy: boolean;
   onToggle: (id: string) => void;
   onOpen: (id: string) => void;
@@ -347,7 +375,9 @@ function ResumeSelectionPane({
                 const disabled = busy || selectionLocked || (!selected && selectedIds.length >= 10);
                 return (
                   <article
-                    className={`selectable-bullet ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${glowingBullet === bullet.id ? "applied-glow" : ""}`}
+                    className={`selectable-bullet ${selected ? "is-selected" : ""} ${active ? "is-active" : ""}`}
+                    data-bullet-id={bullet.id}
+                    data-motion-ack={appliedChanges[bullet.id] ? "applied" : undefined}
                     key={bullet.id}
                   >
                     <Checkbox

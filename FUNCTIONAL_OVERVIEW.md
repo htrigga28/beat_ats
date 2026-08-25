@@ -16,8 +16,8 @@ treated as fixed requirements.
 Beat ATS is a private, single-user web application for tailoring an existing resume to
 one target job description. It converts a PDF or DOCX resume into structured data,
 helps the user verify that data, compares the resume with the target role, proposes
-evidence-constrained alternatives for selected work-experience bullets, and exports an
-ATS-safe Word document.
+evidence-constrained alternatives for selected work-experience and project bullets, and
+exports an ATS-safe Word document.
 
 The product is built around user control and factual integrity:
 
@@ -42,8 +42,8 @@ The application is a linear, four-stage workflow:
    processing consent.
 2. **Review** — inspect and edit the structured resume and the target job description,
    then request an advisory comparison.
-3. **Tailor** — select up to ten work-experience bullets, review AI alternatives, and
-   explicitly apply chosen wording.
+3. **Tailor** — select up to ten work-experience and project bullets, review AI
+   alternatives, and explicitly apply chosen wording.
 4. **Export** — perform a final truth check, generate an ATS-safe DOCX, and download it.
 
 The user can move backward from Tailor to Review and from Export to Tailor. The stage
@@ -148,8 +148,8 @@ interface warns that the previous analysis should be run again before it is used
 
 ### 5. Evidence-constrained bullet tailoring
 
-The tailoring stage operates only on work-experience bullets. The user can select up to
-ten bullets per rewrite request. For each selected bullet, Gemini returns two or three
+The tailoring stage supports work-experience and project bullets. The user can select up
+to ten bullets per rewrite request. For each selected bullet, Gemini returns two or three
 alternatives that are intended to:
 
 - Preserve the original fact and tense.
@@ -175,13 +175,13 @@ marks the earlier analysis as stale.
 
 The final stage shows:
 
-- The number of changed work-experience bullets compared with the originally extracted
-  resume.
+- The number of changed work-experience and project bullets compared with the originally
+  extracted resume.
 - A truth-check reminder to verify every metric and statement.
 - A stale-analysis warning with an action to re-run analysis when applicable.
 - An on-screen preview of the candidate name, links, professional summary, work
   experience, and skills.
-- A visible marker beside changed work-experience bullets.
+- A visible marker beside changed work-experience and project bullets.
 
 The user then generates and downloads `tailored_resume.docx`. Generation is
 deterministic and does not require another AI request.
@@ -237,12 +237,12 @@ failure.
 
 ### Stage-level content
 
-| Stage | Primary content | Primary action | Secondary actions |
-| --- | --- | --- | --- |
-| Upload | File, job description, privacy note, runtime limits, consent | Extract resume | None |
-| Review | Extraction warnings, target job description, structured resume editor, analysis result | Request advisory comparison | Save edits; continue after analysis |
-| Tailor | Selectable source bullets, generated alternatives | Generate alternatives / apply choices | Back to Review; continue without more rewrites |
-| Export | Change summary, truth warning, preview | Generate Word file / download | Re-run stale analysis; back to Tailor |
+| Stage  | Primary content                                                                        | Primary action                        | Secondary actions                              |
+| ------ | -------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------- |
+| Upload | File, job description, privacy note, runtime limits, consent                           | Extract resume                        | None                                           |
+| Review | Extraction warnings, target job description, structured resume editor, analysis result | Request advisory comparison           | Save edits; continue after analysis            |
+| Tailor | Selectable work-experience and project bullets, generated alternatives                 | Generate alternatives / apply choices | Back to Review; continue without more rewrites |
+| Export | Change summary, truth warning, preview                                                 | Generate Word file / download         | Re-run stale analysis; back to Tailor          |
 
 ## Important product states for the UI specification
 
@@ -282,15 +282,15 @@ behavior:
   bullets, skill groups, education entries, projects, or project bullets.
 - Additional resume sections are supported by extraction and DOCX generation but are
   not exposed in the current editor.
-- Tailoring is limited to work-experience bullets; summaries, skills, projects, and
-  other sections do not receive rewrite alternatives.
+- Tailoring supports work-experience and project bullets. Summaries, skills, education,
+  certifications, and additional sections do not receive rewrite alternatives.
 - The UI does not visibly display each rewrite alternative's `incorporated_keywords`
   metadata.
 - The final on-screen proof is incomplete: it omits email, phone, location, education,
   certifications, projects, and additional sections even though the DOCX can contain
   them.
-- The change counter and accepted-change markers cover work-experience bullets only;
-  manual edits elsewhere are not summarized.
+- The change counter and accepted-change markers cover work-experience and project
+  bullets only; manual edits elsewhere are not summarized.
 - There is no side-by-side whole-document diff, undo history, restore-original action,
   or per-change rejection after alternatives have been applied.
 - The downloadable format is DOCX only. There is no PDF export or selectable resume

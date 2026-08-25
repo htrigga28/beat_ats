@@ -102,14 +102,19 @@ elevation because they interrupt or protect state.
 
 ## Interaction and motion
 
-- Stage entry: opacity plus 12px vertical movement, 300ms exponential ease-out.
+- Stage handoff: one GSAP sequence moves the incoming stage by at most 12px and fades it
+  in over 650ms. The active stage marker settles in the same sequence.
 - Drag-over: dashed Slate border becomes solid Indigo and the target scales to 0.99 over 200ms.
 - Accordions: height reveal over 300ms ease-in-out.
-- Applied wording: one 1000ms Emerald confirmation wash on the changed bullet.
+- Analysis arrival, applied wording, and completed DOCX use isolated 220ms acknowledgements.
+  They keep a persistent text or icon cue after motion ends.
 - Progress uses real upload percentage and streamed backend milestones; no fake looping progress.
-- `prefers-reduced-motion` removes transforms and shortens nonessential transitions.
+- `prefers-reduced-motion` removes spatial movement and clears inline motion styles. Text,
+  icons, and state labels remain available.
 
-Motion confirms direction, state change, or causality. It is never applied as decoration.
+The four-stage verification handoff shows source entry, fact checking, accepted wording,
+and document readiness. Motion confirms direction, state change, or causality. It is
+never applied as decoration.
 
 ## Component rules
 

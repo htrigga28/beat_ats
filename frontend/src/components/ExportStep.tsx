@@ -10,6 +10,7 @@ import {
 import type { AppliedChange, ResumeDocument, TruthConfirmations } from "../types";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import { ExportCompletionAcknowledgement } from "./ExportCompletionAcknowledgement";
 import { ResumePreview } from "./ResumePreview";
 
 interface Props {
@@ -68,7 +69,7 @@ export function ExportStep({
         : "Download ATS-safe Word document (.docx)";
 
   return (
-    <section className="stage-enter export-stage" aria-labelledby="export-title">
+    <section className="export-stage" aria-labelledby="export-title">
       <div className="stage-intro export-intro">
         <span className="stage-kicker">Stage 4 · Final proof</span>
         <h2 id="export-title">Verify the final document</h2>
@@ -196,14 +197,17 @@ export function ExportStep({
             <span className="export-locked">Complete both truth checks to unlock download.</span>
           )}
           {exportStatus === "idle" && hasDownload && (
-            <Button
-              type="button"
-              variant="secondary"
-              className="download-again-button"
-              onClick={onDownloadAgain}
-            >
-              <Download aria-hidden="true" /> Download again
-            </Button>
+            <>
+              <ExportCompletionAcknowledgement complete />
+              <Button
+                type="button"
+                variant="secondary"
+                className="download-again-button"
+                onClick={onDownloadAgain}
+              >
+                <Download aria-hidden="true" /> Download again
+              </Button>
+            </>
           )}
         </aside>
       </div>

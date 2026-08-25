@@ -14,10 +14,10 @@ suggestions, and downloads an ATS-safe tailored Word document.
 
 ## Product Purpose
 
-Beat ATS helps a candidate identify meaningful resume gaps and rewrite selected work
-experience bullets without fabricating their history. Success means the user can move
-from an uploaded PDF or DOCX and a job description to a verified, parseable DOCX while
-remaining in control of every factual change.
+Beat ATS helps a candidate identify meaningful resume gaps and rewrite selected
+work-experience and project bullets without fabricating their history. Success means the
+user can move from an uploaded PDF or DOCX and a job description to a verified,
+parseable DOCX while remaining in control of every factual change.
 
 ## Positioning
 
@@ -39,6 +39,7 @@ clear the session at any point.
 - Keep every extracted resume field editable before analysis or export.
 - Treat match scores as advisory estimates, not vendor ATS scores.
 - Require explicit application of each AI rewrite and an explicit action to re-analyze.
+- Tailor selected work-experience and project bullets only.
 - Generate single-column DOCX output without tables, images, headers, footers, text
   boxes, hidden text, or white-font content.
 - The first release has no accounts, database, saved history, public sharing, or local

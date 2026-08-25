@@ -340,19 +340,6 @@ svg {
   height: 14px;
 }
 
-.stage-enter {
-  animation: stage-enter 300ms ease-out both;
-}
-@keyframes stage-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 .stage-intro {
   max-width: 720px;
   margin: 0 auto 28px;
@@ -1590,10 +1577,6 @@ svg {
   border-color: var(--indigo-600);
   box-shadow: 0 0 0 2px var(--indigo-100);
 }
-.selectable-bullet.applied-glow {
-  background: rgba(236, 253, 245, 0.5);
-  box-shadow: 0 0 0 3px var(--emerald-100);
-}
 .selectable-bullet > button {
   padding: 0;
   border: 0;
@@ -2059,6 +2042,25 @@ svg {
 }
 .export-ready {
   color: var(--emerald-700);
+}
+.export-complete {
+  margin-top: 9px;
+  min-height: 32px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--emerald-50);
+  color: var(--emerald-700);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+.export-complete svg {
+  width: 12px;
+  height: 12px;
 }
 .export-locked {
   color: var(--slate-500);

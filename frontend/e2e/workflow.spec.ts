@@ -28,6 +28,18 @@ test("completes the controlled desktop workflow and downloads DOCX", async ({ pa
     .getByRole("button", { name: "Apply wording" })
     .click();
   await expect(page.locator(".tailor-desktop").getByText("Applied wording")).toBeVisible();
+  const appliedMotion = page
+    .locator('[data-motion-ack="applied"][data-bullet-id="work-1"]')
+    .first();
+  await expect(appliedMotion).toHaveAttribute("data-motion-state", "settled");
+  expect(
+    await appliedMotion.evaluate((element) => ({
+      backgroundColor: element.style.backgroundColor,
+      boxShadow: element.style.boxShadow,
+      opacity: element.style.opacity,
+      transform: element.style.transform,
+    })),
+  ).toEqual({ backgroundColor: "", boxShadow: "", opacity: "", transform: "" });
 
   await page.getByRole("button", { name: "Review next bullet" }).click();
   await expect(
@@ -144,13 +156,15 @@ test("ignores an analysis result that completes after the target changes", async
   releaseFirstAnalysis();
 
   await expect(page.getByRole("heading", { name: "Verify what was extracted" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tailor the wording, preserve the truth" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("heading", { name: "Tailor the wording, preserve the truth" }),
+  ).toHaveCount(0);
 
   await page.getByRole("button", { name: /Request advisory comparison/ }).click();
   await expect.poll(() => requestedTargets).toEqual([expect.any(String), updatedTarget]);
-  await expect(page.getByRole("heading", { name: "Tailor the wording, preserve the truth" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Tailor the wording, preserve the truth" }),
+  ).toBeVisible();
 });
 
 test("enforces the ten-bullet cap and preserves state across back navigation", async ({ page }) => {
@@ -208,4 +222,60 @@ test("completes the no-tailoring path at a 390px mobile viewport", async ({ page
   await page.getByRole("button", { name: "Continue without tailoring" }).click();
   await expect(page.getByRole("heading", { name: "Verify the final document" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("settles forward and backward stage handoffs without changing final layout", async ({
+  page,
+}) => {
+  await mockApi(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+
+  await completeUpload(page);
+  const review = page.locator('[data-motion-stage="2"]');
+  await expect(review).toHaveAttribute("data-motion-state", "settled");
+  await expect(review).toHaveCSS("opacity", "1");
+  await expect(review).toHaveCSS("transform", "none");
+
+  await page.getByRole("button", { name: /Request advisory comparison/ }).click();
+  const tailor = page.locator('[data-motion-stage="3"]');
+  await expect(tailor).toBeVisible();
+  await expect(tailor).toHaveAttribute("data-motion-state", "settled");
+  await expect(tailor).toHaveCSS("opacity", "1");
+  await expect(tailor).toHaveCSS("transform", "none");
+
+  await page.getByRole("button", { name: "Back to review" }).click();
+  const returnedReview = page.locator('[data-motion-stage="2"]');
+  await expect(returnedReview).toHaveAttribute("data-motion-state", "settled");
+  await expect(returnedReview).toHaveCSS("opacity", "1");
+  await expect(returnedReview).toHaveCSS("transform", "none");
+});
+
+test("cleans an interrupted stage handoff before the reversed stage settles", async ({ page }) => {
+  await mockApi(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+  await completeUpload(page);
+  await expect(page.locator('[data-motion-stage="2"]')).toHaveAttribute(
+    "data-motion-state",
+    "settled",
+  );
+
+  await page.getByRole("button", { name: /Request advisory comparison/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Tailor the wording, preserve the truth" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Back to review" }).click();
+
+  const review = page.locator('[data-motion-stage="2"]');
+  await expect(review).toHaveAttribute("data-motion-state", "settled");
+  await expect(page.locator("[data-motion-stage]")).toHaveCount(1);
+  await expect(page.locator('.workflow-stepper li[aria-current="step"]')).toHaveCount(1);
+  expect(
+    await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[data-motion-stage], [data-step-marker]")].every(
+        (element) => element.style.opacity === "" && element.style.transform === "",
+      ),
+    ),
+  ).toBe(true);
 });

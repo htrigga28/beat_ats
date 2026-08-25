@@ -51,6 +51,35 @@ Check the deployment project's active limits in [Google AI Studio](https://aistu
 and consult Google's [rate-limit documentation](https://ai.google.dev/gemini-api/docs/rate-limits)
 before opening the deployment to more users.
 
+## Private deployment gate
+
+This product processes candidate data. Do not use a public deployment for a real resume.
+
+- Docker stays bound to `127.0.0.1` by default.
+- For Vercel, protect every production and preview URL with an **All Deployments** access
+  check. Use Vercel Authentication, Password Protection, or Trusted IPs when the account
+  plan supports it.
+- Standard Protection does not protect the production domain. It is not a private
+  production control.
+- Do not deploy candidate data to Vercel if the account cannot protect production. Use
+  localhost or another private provider boundary instead.
+
+The deployer owns this manual release gate. Before a real resume is used, the deployer
+must use a signed-out private browser and record the date, provider, protection method,
+protection scope, deployment URL, and denial result for these requests:
+
+- `GET /`
+- `GET /api/v1/config`
+- `POST /api/v1/analyses`
+
+The denial must occur at the provider boundary. An application `404` or validation `422`
+does not prove deployment protection. Store the signed-out check in pull-request or
+release evidence. Do not store access tokens, bypass secrets, resume data, or request
+bodies in that evidence. Do not store automation bypass secrets in Git or expose them to
+the frontend.
+
+If the deployer does not record all three provider denials, the release is localhost-only.
+
 ## Git workflow
 
 - `main`: production branch
