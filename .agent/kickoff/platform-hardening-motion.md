@@ -138,9 +138,9 @@ The product is a private, single-user application. It must not gain accounts, sa
 - The implementation adds editable target text, guarded request completion, one real-stack test, and purposeful GSAP motion.
 - The real-stack test uses a local fake Gemini service. It does not send the supplied resume to an external model.
 - The final Ponytail review found five cuts. All cuts are complete. The changes remove 678 lines of duplicate or unnecessary code and assertions.
-- The final correctness review found two P1 issues and two P2 issues. All four issues are fixed. The fixes restore all analysis evidence, enforce the 50,000-character limit, restore the coverage gate, and verify every populated DOCX field.
+- The final correctness review found two P1 issues and three P2 issues. All five issues are fixed. The fixes restore all analysis evidence, enforce the 50,000-character limit, restore the coverage gate, verify every populated DOCX field, and stop old motion acknowledgements from replaying.
 - `python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=85 -q` passes with 52 tests and 91.66% total coverage.
-- `npm test` passes with 39 tests and 85.41% branch coverage.
+- `npm test` passes with 42 tests and 86.23% branch coverage.
 - Ruff lint and format, MyPy, ESLint, Prettier, TypeScript, Vite build, and the OpenAPI type drift check pass.
 - The normal Playwright suite passes with 14 tests. The real-stack Playwright suite passes with the supplied resume and complete DOCX checks.
 - `npm audit --omit=dev` reports zero production vulnerabilities.
