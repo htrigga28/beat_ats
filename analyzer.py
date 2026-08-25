@@ -492,41 +492,6 @@ async def runtime_config() -> RuntimeConfig:
     )
 
 
-@app.post("/api/v1/resumes/ingest", response_model=ResumeIngestionResponse)
-async def ingest_resume(
-    file: Annotated[UploadFile, File()],
-    ai_processing_consent: Annotated[bool, Form()],
-    service: Annotated[GeminiService, Depends(get_gemini_service)],
-    allow_vision_fallback: Annotated[bool, Form()] = False,
-) -> ResumeIngestionResponse:
-    _require_consent(ai_processing_consent)
-    max_upload_bytes = get_settings().max_upload_bytes
-    data = await file.read(max_upload_bytes + 1)
-    filename = file.filename or "resume"
-    await file.close()
-    if len(data) > max_upload_bytes:
-        _api_error(
-            413,
-            "document_too_large",
-            f"Resume uploads must be {max_upload_bytes / (1024 * 1024):g} MB or smaller.",
-        )
-    try:
-        return await _ingest_resume_data(
-            data,
-            filename,
-            allow_vision_fallback=allow_vision_fallback,
-            service=service,
-            max_upload_bytes=max_upload_bytes,
-        )
-    except IngestionError as exc:
-        _api_error(
-            exc.status_code,
-            exc.error.code,
-            exc.error.message,
-            retryable=exc.error.retryable,
-        )
-
-
 async def _ingest_resume_data(
     data: bytes,
     filename: str,

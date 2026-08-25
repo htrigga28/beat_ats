@@ -88,12 +88,43 @@ current capabilities and quota rules.
 
 - `GET /healthz`
 - `GET /api/v1/config`
-- `POST /api/v1/resumes/ingest`
+- `POST /api/v1/resumes/ingest/stream`
 - `POST /api/v1/analyses`
 - `POST /api/v1/rewrites`
 - `POST /api/v1/documents/docx`
 
 The compiled SPA is served at `/`; `/docs` and `/openapi.json` remain available.
+
+Streaming ingestion is the only resume-ingestion API. The former JSON ingestion route
+was removed as a breaking change. This private product has no supported external API
+consumer for that route.
+
+## Real-stack integration test
+
+Run the test from `frontend/`:
+
+```bash
+npm run e2e:integration
+```
+
+The command builds the SPA, copies that exact build to a clean test-only `public/`
+directory, and lets Playwright start and stop FastAPI. The child process has an empty
+`GEMINI_API_KEY`. A deterministic local service replaces Gemini. The test generates a
+non-private PDF at runtime when `BEAT_ATS_INTEGRATION_RESUME` is not a readable file.
+It verifies the stream route, analysis, work and project rewrite requests, one applied
+rewrite, DOCX content and structure, and repeated download from the retained browser
+Blob. Equal download bytes prove retained-Blob repeat download. They do not prove a
+second document-generation run.
+
+For a local private-resume check, set the path for the command only. Do not copy the
+file into the repository.
+
+```powershell
+$env:BEAT_ATS_INTEGRATION_RESUME = 'C:\path\to\resume.pdf'
+Set-Location frontend
+npm run e2e:integration
+Remove-Item Env:BEAT_ATS_INTEGRATION_RESUME
+```
 
 ## Validation
 
@@ -108,6 +139,7 @@ PATH="/path/to/node-22/bin:$PATH" npm run lint
 PATH="/path/to/node-22/bin:$PATH" npm run typecheck
 PATH="/path/to/node-22/bin:$PATH" npm test
 PATH="/path/to/node-22/bin:$PATH" npm run build
+PATH="/path/to/node-22/bin:$PATH" npm run e2e:integration
 ```
 
 The Gemini smoke test makes one real, structured-output request using the configured

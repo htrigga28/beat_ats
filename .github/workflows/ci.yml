@@ -83,6 +83,10 @@ jobs:
         working-directory: frontend
         run: npm run e2e
 
+      - name: Playwright real-stack integration test
+        working-directory: frontend
+        run: npm run e2e:integration
+
       - name: Lint
         run: ruff check .
 

@@ -38,23 +38,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/resumes/ingest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Ingest Resume */
-        post: operations["ingest_resume_api_v1_resumes_ingest_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/resumes/ingest/stream": {
         parameters: {
             query?: never;
@@ -153,18 +136,6 @@ export interface components {
              * @default false
              */
             retryable: boolean;
-        };
-        /** Body_ingest_resume_api_v1_resumes_ingest_post */
-        Body_ingest_resume_api_v1_resumes_ingest_post: {
-            /** File */
-            file: string;
-            /** Ai Processing Consent */
-            ai_processing_consent: boolean;
-            /**
-             * Allow Vision Fallback
-             * @default false
-             */
-            allow_vision_fallback: boolean;
         };
         /** Body_ingest_resume_stream_api_v1_resumes_ingest_stream_post */
         Body_ingest_resume_stream_api_v1_resumes_ingest_stream_post: {
@@ -471,39 +442,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeConfig"];
-                };
-            };
-        };
-    };
-    ingest_resume_api_v1_resumes_ingest_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_ingest_resume_api_v1_resumes_ingest_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResumeIngestionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

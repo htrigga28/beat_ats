@@ -46,14 +46,6 @@ export function getConfig(signal?: AbortSignal) {
   );
 }
 
-export function ingestResume(formData: FormData, signal?: AbortSignal) {
-  return readJson<{
-    resume: import("./types").ResumeDocument;
-    extraction_method: string;
-    warnings: string[];
-  }>(client.POST("/api/v1/resumes/ingest", { body: formData as never, signal }) as never);
-}
-
 interface IngestionCallbacks {
   onUploadProgress: (progress: number) => void;
   onEvent: (event: IngestionStreamEvent) => void;
