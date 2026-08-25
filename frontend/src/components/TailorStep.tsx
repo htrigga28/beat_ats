@@ -161,10 +161,6 @@ export function TailorStep({
     else if (selectedIds.length < 10) onSelectionChange([...selectedIds, id]);
   };
 
-  const apply = (bulletId: string, text: string) => {
-    onApply(bulletId, text);
-  };
-
   const openBullet = (id: string) => {
     onOpen(id);
     setMobileTab("suggestions");
@@ -190,7 +186,7 @@ export function TailorStep({
       result={activeBulletId ? rewritesByBulletId[activeBulletId] : undefined}
       currentText={activeBulletId ? findBullet(resume, activeBulletId) : null}
       hasGenerated={rewriteCount > 0}
-      onApply={apply}
+      onApply={onApply}
     />
   );
 

@@ -198,7 +198,7 @@ export function ExportStep({
           )}
           {exportStatus === "idle" && hasDownload && (
             <>
-              <ExportCompletionAcknowledgement complete />
+              <ExportCompletionAcknowledgement />
               <Button
                 type="button"
                 variant="secondary"

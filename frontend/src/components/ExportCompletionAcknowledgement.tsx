@@ -3,18 +3,12 @@ import { gsap } from "gsap";
 import { useLayoutEffect, useRef } from "react";
 import { clearMotionStyles, prefersReducedMotion } from "../motion";
 
-export function ExportCompletionAcknowledgement({ complete }: { complete: boolean }) {
+export function ExportCompletionAcknowledgement() {
   const acknowledgementRef = useRef<HTMLSpanElement>(null);
-  const hadCompletionRef = useRef(false);
 
   useLayoutEffect(() => {
-    if (!complete) {
-      hadCompletionRef.current = false;
-      return;
-    }
     const target = acknowledgementRef.current;
-    if (!target || hadCompletionRef.current) return;
-    hadCompletionRef.current = true;
+    if (!target) return;
     target.dataset.motionState = "running";
 
     if (prefersReducedMotion()) {
@@ -50,9 +44,7 @@ export function ExportCompletionAcknowledgement({ complete }: { complete: boolea
       clearMotionStyles(target, "backgroundColor,boxShadow,opacity,transform");
       target.dataset.motionState = "settled";
     };
-  }, [complete]);
-
-  if (!complete) return null;
+  }, []);
 
   return (
     <span

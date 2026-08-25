@@ -36,11 +36,8 @@ describe("motion acknowledgements", () => {
     expect(target?.style.transform).toBe("");
   });
 
-  it("does not acknowledge truth readiness and acknowledges only a completed DOCX", () => {
-    const rendered = render(<ExportCompletionAcknowledgement complete={false} />);
-    expect(rendered.container.querySelector('[data-motion-ack="export"]')).toBeNull();
-
-    rendered.rerender(<ExportCompletionAcknowledgement complete />);
+  it("acknowledges a completed DOCX and clears the acknowledgement on unmount", () => {
+    const rendered = render(<ExportCompletionAcknowledgement />);
     const target = rendered.container.querySelector<HTMLElement>('[data-motion-ack="export"]');
     expect(target).not.toBeNull();
     expect(target?.dataset.motionState).toBe("running");
@@ -64,7 +61,7 @@ describe("motion acknowledgements", () => {
     expect(analysisTarget?.style.transform).toBe("");
     analysisRender.unmount();
 
-    const exportRender = render(<ExportCompletionAcknowledgement complete />);
+    const exportRender = render(<ExportCompletionAcknowledgement />);
     const exportTarget = exportRender.container.querySelector<HTMLElement>(
       '[data-motion-ack="export"]',
     );

@@ -123,8 +123,7 @@ The product is a private, single-user application. It must not gain accounts, sa
 ## Plan
 
 - Reviewed Markdown plan: `.agent/kickoff/platform-hardening-motion-plan.md`
-- Editable visual plan: `.lavish/platform-hardening-motion-plan.html`
-- Accepted read-only plan: `.agent/kickoff/platform-hardening-motion-plan.accepted.html`
+- Accepted visual plan archive: `.agent/kickoff/platform-hardening-motion-plan.accepted.html`
 - Adversarial review: `.agent/kickoff/platform-hardening-motion-adversarial-review.md`
 - Simplicity review: `.agent/kickoff/platform-hardening-motion-simplicity-review.md`
 - All Major, Simplify, Question, and Minor findings have recorded dispositions. No material conflict remains.
