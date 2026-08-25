@@ -145,14 +145,8 @@ class ResumeDocument(StrictModel):
         entry_ids = [role.id for role in self.work_experience] + [
             project.id for project in self.projects
         ]
-        bullet_ids = [
-            bullet.id
-            for role in self.work_experience
-            for bullet in role.bullets
-        ] + [
-            bullet.id
-            for project in self.projects
-            for bullet in project.bullets
+        bullet_ids = [bullet.id for role in self.work_experience for bullet in role.bullets] + [
+            bullet.id for project in self.projects for bullet in project.bullets
         ]
         if len(entry_ids) != len(set(entry_ids)):
             raise ValueError("Resume entry IDs must be unique.")
