@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _new_id() -> str:
@@ -139,6 +139,26 @@ class ResumeDocument(StrictModel):
     certifications: list[str] = Field(default_factory=list, max_length=30)
     projects: list[Project] = Field(default_factory=list, max_length=30)
     additional_sections: list[AdditionalSection] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self) -> ResumeDocument:
+        entry_ids = [role.id for role in self.work_experience] + [
+            project.id for project in self.projects
+        ]
+        bullet_ids = [
+            bullet.id
+            for role in self.work_experience
+            for bullet in role.bullets
+        ] + [
+            bullet.id
+            for project in self.projects
+            for bullet in project.bullets
+        ]
+        if len(entry_ids) != len(set(entry_ids)):
+            raise ValueError("Resume entry IDs must be unique.")
+        if len(bullet_ids) != len(set(bullet_ids)):
+            raise ValueError("Resume bullet IDs must be unique.")
+        return self
 
 
 class ExtractionMethod(StrEnum):

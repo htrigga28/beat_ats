@@ -20,8 +20,10 @@ interface Props {
   analysisStale: boolean;
   busy: boolean;
   exportStatus: "idle" | "compiling" | "downloading";
+  hasDownload: boolean;
   onTruthChange: (key: keyof TruthConfirmations, checked: boolean) => void;
   onGenerate: () => void;
+  onDownloadAgain: () => void;
   onReanalyze: () => void;
   onBack: () => void;
 }
@@ -45,8 +47,10 @@ export function ExportStep({
   analysisStale,
   busy,
   exportStatus,
+  hasDownload,
   onTruthChange,
   onGenerate,
+  onDownloadAgain,
   onReanalyze,
   onBack,
 }: Props) {
@@ -61,7 +65,7 @@ export function ExportStep({
       ? "Compiling ATS-safe document…"
       : exportStatus === "downloading"
         ? "Downloading file…"
-        : "Download ATS-optimized Word document (.docx)";
+        : "Download ATS-safe Word document (.docx)";
 
   return (
     <section className="stage-enter export-stage" aria-labelledby="export-title">
@@ -190,6 +194,16 @@ export function ExportStep({
             </span>
           ) : (
             <span className="export-locked">Complete both truth checks to unlock download.</span>
+          )}
+          {exportStatus === "idle" && hasDownload && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="download-again-button"
+              onClick={onDownloadAgain}
+            >
+              <Download aria-hidden="true" /> Download again
+            </Button>
           )}
         </aside>
       </div>

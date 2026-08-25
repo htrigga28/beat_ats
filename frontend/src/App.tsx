@@ -36,6 +36,7 @@ function Application() {
     restoreBullet,
     reanalyze,
     createDocx,
+    downloadDocx,
     clearSession,
     cancelActiveRequest,
     setStep,
@@ -193,8 +194,10 @@ function Application() {
             analysisStale={state.analysisStale}
             busy={Boolean(state.activeRequest)}
             exportStatus={state.exportStatus}
+            hasDownload={state.docxBlob !== null}
             onTruthChange={(key, checked) => dispatch({ type: "truthConfirmation", key, checked })}
             onGenerate={createDocx}
+            onDownloadAgain={downloadDocx}
             onReanalyze={reanalyze}
             onBack={() => setStep(3)}
           />

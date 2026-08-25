@@ -521,13 +521,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description One IngestionStreamEvent per JSON Lines record. */
+            /** @description JSON Lines stream of progress, result, or error records. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/jsonl": components["schemas"]["IngestionProgressEvent"] | components["schemas"]["IngestionResultEvent"] | components["schemas"]["IngestionErrorEvent"];
+                    "application/jsonl": string;
                 };
             };
             /** @description Validation Error */

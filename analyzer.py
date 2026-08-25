@@ -483,11 +483,12 @@ async def health() -> HealthResponse:
 
 @app.get("/api/v1/config", response_model=RuntimeConfig)
 async def runtime_config() -> RuntimeConfig:
+    settings = get_settings()
     return RuntimeConfig(
-        max_upload_bytes=get_settings().max_upload_bytes,
+        max_upload_bytes=settings.max_upload_bytes,
         accepted_extensions=["pdf", "docx"],
-        vision_fallback_available=True,
-        gemini_model=get_settings().gemini_model,
+        vision_fallback_available=settings.gemini_api_key is not None,
+        gemini_model=settings.gemini_model,
     )
 
 
@@ -649,18 +650,8 @@ async def _ingestion_events(
     response_class=StreamingResponse,
     responses={
         200: {
-            "description": "One IngestionStreamEvent per JSON Lines record.",
-            "content": {
-                "application/jsonl": {
-                    "schema": {
-                        "oneOf": [
-                            {"$ref": "#/components/schemas/IngestionProgressEvent"},
-                            {"$ref": "#/components/schemas/IngestionResultEvent"},
-                            {"$ref": "#/components/schemas/IngestionErrorEvent"},
-                        ]
-                    }
-                }
-            },
+            "description": "JSON Lines stream of progress, result, or error records.",
+            "content": {"application/jsonl": {"schema": {"type": "string"}}},
         }
     },
 )
@@ -743,9 +734,11 @@ async def gemini_error_handler(request: Request, exc: GeminiProviderError) -> Re
     return Response(content=payload, status_code=exc.status_code, media_type="application/json")
 
 
-# Vercel serves ``public/`` as static output outside the Python function bundle.
-# The mount is still useful locally and in Docker, but trying to initialize it in
-# the function when that bundle does not contain the directory causes every SPA
-# deep link to fail with a 500 before Vercel's static rewrite can run.
-if Path("public").is_dir():
-    app.frontend("/", directory="public", fallback="index.html")
+# Vercel and Docker copy the compiled SPA to ``public/``. During local development
+# the Vite build remains in ``frontend/dist``; serving either location keeps the
+# API and the SPA testable from one FastAPI process.
+frontend_directory = Path("public")
+if not frontend_directory.is_dir():
+    frontend_directory = Path("frontend/dist")
+if frontend_directory.is_dir():
+    app.frontend("/", directory=str(frontend_directory), fallback="index.html")

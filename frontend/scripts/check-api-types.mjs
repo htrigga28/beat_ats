@@ -5,9 +5,11 @@ import { join } from "node:path";
 
 const directory = mkdtempSync(join(tmpdir(), "beat-ats-openapi-"));
 const generated = join(directory, "api-types.ts");
-const generator = join(process.cwd(), "node_modules", ".bin", "openapi-typescript");
+// Invoke the package entry point through Node so this check works on Windows,
+// where the npm-generated ``.bin`` shim is a ``.cmd`` file.
+const generator = join(process.cwd(), "node_modules", "openapi-typescript", "bin", "cli.js");
 try {
-  execFileSync(generator, ["http://127.0.0.1:8000/openapi.json", "-o", generated], {
+  execFileSync(process.execPath, [generator, "http://127.0.0.1:8000/openapi.json", "-o", generated], {
     stdio: "inherit",
   });
   const expected = readFileSync("src/api-types.ts", "utf8");

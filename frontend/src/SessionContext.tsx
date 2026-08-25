@@ -36,9 +36,9 @@ interface SessionContextValue {
   changeSelection: () => void;
   applySuggestion: (bulletId: string, text: string) => void;
   restoreBullet: (bulletId: string) => void;
-  applyChoices: (choices: Record<string, string>) => void;
   reanalyze: () => void;
   createDocx: () => void;
+  downloadDocx: () => void;
   clearSession: () => void;
   cancelActiveRequest: () => void;
   setStep: (step: Step) => void;
@@ -74,6 +74,15 @@ function findBulletText(resume: ResumeDocument, bulletId: string): string | null
     if (bullet) return bullet.text;
   }
   return null;
+}
+
+function downloadDocxBlob(blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "tailored_resume.docx";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -262,18 +271,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       (signal) =>
         generateDocx(snapshot.resume!, signal).then((blob) => {
           dispatch({ type: "docxLoaded", blob });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = "tailored_resume.docx";
-          link.click();
-          URL.revokeObjectURL(url);
+          downloadDocxBlob(blob);
           dispatch({ type: "docxDownloadFinished" });
           return blob;
         }),
       retry,
     );
   }, [run]);
+
+  const downloadDocx = useCallback(() => {
+    const blob = stateRef.current.docxBlob;
+    if (blob) downloadDocxBlob(blob);
+  }, []);
 
   const clearSession = useCallback(() => {
     requestRef.current?.controller.abort();
@@ -297,9 +306,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       changeSelection,
       applySuggestion,
       restoreBullet,
-      applyChoices,
       reanalyze,
       createDocx,
+      downloadDocx,
       clearSession,
       cancelActiveRequest,
       setStep,
@@ -314,9 +323,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       changeSelection,
       applySuggestion,
       restoreBullet,
-      applyChoices,
       reanalyze,
       createDocx,
+      downloadDocx,
       clearSession,
       cancelActiveRequest,
       setStep,

@@ -6,6 +6,7 @@ from collections.abc import Generator
 from io import BytesIO
 
 import pytest
+from docx import Document
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from google.genai import types
@@ -26,7 +27,7 @@ from schemas import (
     GapAnalysis,
     ResumeDocument,
 )
-from settings import Settings
+from settings import Settings, get_settings
 
 
 def _pdf_bytes(text: str | None = None) -> bytes:
@@ -315,7 +316,7 @@ def test_runtime_config_exposes_default_upload_contract() -> None:
     assert response.json() == {
         "max_upload_bytes": 10 * 1024 * 1024,
         "accepted_extensions": ["pdf", "docx"],
-        "vision_fallback_available": True,
+        "vision_fallback_available": get_settings().gemini_api_key is not None,
         "gemini_model": "gemini-3.1-flash-lite",
     }
 
@@ -359,6 +360,28 @@ def test_ingest_scanned_pdf_requires_explicit_vision_permission(
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "vision_consent_required"
     assert fake_service.pdf_calls == 0
+
+
+def test_ingest_rejects_empty_docx_before_gemini(fake_service: FakeGeminiService) -> None:
+    stream = BytesIO()
+    Document().save(stream)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/resumes/ingest",
+            files={
+                "file": (
+                    "empty.docx",
+                    stream.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+            data={"ai_processing_consent": "true", "allow_vision_fallback": "false"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "document_parse_failed"
+    assert fake_service.text_calls == []
 
 
 def test_ingest_scanned_pdf_uses_inline_vision(fake_service: FakeGeminiService) -> None:

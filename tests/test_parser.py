@@ -31,6 +31,12 @@ def _docx_bytes() -> bytes:
     return stream.getvalue()
 
 
+def _empty_docx_bytes() -> bytes:
+    stream = BytesIO()
+    Document().save(stream)
+    return stream.getvalue()
+
+
 def _pdf_bytes(text: str | None = None, pages: int = 1) -> bytes:
     stream = BytesIO()
     pdf = canvas.Canvas(stream)
@@ -71,6 +77,11 @@ def test_extract_docx_preserves_paragraph_and_table_order() -> None:
         "React | TypeScript",
         "Education",
     ]
+
+
+def test_extract_docx_rejects_documents_without_readable_text() -> None:
+    with pytest.raises(CorruptDocumentError, match="No readable text"):
+        extract_docx_text(_empty_docx_bytes())
 
 
 def test_extract_pdf_marks_image_only_document_for_vision() -> None:

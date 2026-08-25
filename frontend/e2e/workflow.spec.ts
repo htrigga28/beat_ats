@@ -41,7 +41,7 @@ test("completes the controlled desktop workflow and downloads DOCX", async ({ pa
   await expect(page.getByRole("heading", { name: "Verify the final document" })).toBeVisible();
   await expect(page.getByText("Web Accessibility Specialist")).toBeVisible();
   await expect(page.getByText("Mentor at Frontend Lagos")).toBeVisible();
-  const downloadButton = page.getByRole("button", { name: /Download ATS-optimized/ });
+  const downloadButton = page.getByRole("button", { name: /Download ATS-safe/ });
   await expect(downloadButton).toBeDisabled();
   await page.getByRole("checkbox", { name: /all bullet points, numbers/ }).check();
   await page.getByRole("checkbox", { name: /results are advisory/ }).check();
@@ -50,6 +50,11 @@ test("completes the controlled desktop workflow and downloads DOCX", async ({ pa
   await downloadButton.click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("tailored_resume.docx");
+
+  const repeatDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download again" }).click();
+  const repeatDownload = await repeatDownloadPromise;
+  expect(repeatDownload.suggestedFilename()).toBe("tailored_resume.docx");
 });
 
 test("recovers from scanned-PDF consent and retains populated inputs", async ({ page }) => {
